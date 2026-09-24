@@ -674,7 +674,7 @@ router.get('/sample-csv', (req, res) => {
   res.status(200).send(bomCsv);
 });
 
-// 21. Nhập file (Hỗ trợ cả .xlsx, .xls và .csv)
+// 21. Nhập file (Hỗ trợ cả .xlsx, .xls và .csv, tự động nhận diện header dù có tiêu đề/banner phía trên)
 router.post('/import-file', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -684,36 +684,105 @@ router.post('/import-file', upload.single('file'), async (req, res) => {
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
-    const records = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+    
+    // Đọc toàn bộ sheet thành mảng 2D
+    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    if (!rawData || rawData.length === 0) {
+      return res.status(400).json({ success: false, message: 'File dữ liệu rỗng!' });
+    }
 
-    if (records.length === 0) {
-      return res.status(400).json({ success: false, message: 'File dữ liệu rỗng hoặc không đúng định dạng!' });
+    // Tự động tìm dòng tiêu đề thật (dòng chứa từ khóa 'MSSV' và 'Họ và tên' / 'Họ tên')
+    let headerRowIdx = -1;
+    for (let r = 0; r < Math.min(rawData.length, 30); r++) {
+      const row = rawData[r].map(c => String(c).trim().toLowerCase());
+      const hasMssv = row.some(c => c.includes('mssv') || c.includes('mã định danh'));
+      const hasName = row.some(c => c.includes('họ') && (c.includes('tên') || c.includes('ten')));
+      if (hasMssv && hasName) {
+        headerRowIdx = r;
+        break;
+      }
+    }
+
+    // Nếu không tìm thấy, fallback về dòng đầu tiên
+    if (headerRowIdx === -1) headerRowIdx = 0;
+
+    const headers = rawData[headerRowIdx].map(c => String(c).trim());
+    
+    // Xác định chỉ số các cột
+    const findCol = (keywords) => {
+      return headers.findIndex(h => {
+        const lower = h.toLowerCase();
+        return keywords.some(k => lower.includes(k));
+      });
+    };
+
+    const colLeader = headers.findIndex(h => {
+      const lower = h.toLowerCase().trim();
+      return lower.includes('nhóm trưởng') || lower.includes('trưởng nhóm') || lower.includes('leader');
+    });
+
+    const colGroup = headers.findIndex(h => {
+      const lower = h.toLowerCase().trim();
+      return (lower === 'nhóm' || lower === 'group' || (lower.includes('nhóm') && !lower.includes('trưởng')));
+    });
+
+    const colMssv = findCol(['mssv', 'mã định danh']);
+    const colName = findCol(['họ và tên', 'họ tên', 'full_name', 'fullname']);
+    const colGender = findCol(['giới tính', 'gender']);
+    const colClass = findCol(['lớp', 'class']);
+    const colPhone = findCol(['số điện thoại', 'sđt', 'phone', 'điện thoại']);
+    const colEmail = findCol(['email']);
+    const colRole = findCol(['chức vụ', 'role']);
+
+    if (colMssv === -1 || colName === -1) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Không tìm thấy các cột bắt buộc (MSSV, Họ và tên) trong file!' 
+      });
     }
 
     let importedCount = 0;
     let updatedCount = 0;
     const errors = [];
+    let currentLeader = '';
+    let currentGroupNum = 1;
 
-    for (let i = 0; i < records.length; i++) {
-      const row = records[i];
+    for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || row.length === 0) continue;
 
-      const mssv = String(row['MSSV'] || row['mssv'] || row['Mã định danh'] || '').trim();
-      const fullName = String(row['Họ và tên'] || row['Họ tên'] || row['fullName'] || row['full_name'] || '').trim();
+      const mssv = String(row[colMssv] || '').trim();
+      const fullName = String(row[colName] || '').trim();
+
+      // Bỏ qua dòng trống hoặc dòng tổng cộng/thống kê
+      if (!mssv || !fullName) continue;
+
+      // Xử lý nhóm
+      let groupNum = currentGroupNum;
+      if (colGroup !== -1 && row[colGroup]) {
+        const rawGroup = String(row[colGroup]);
+        const match = rawGroup.match(/\d+/);
+        if (match) {
+          groupNum = Number(match[0]);
+          if (groupNum >= 1 && groupNum <= 8) {
+            currentGroupNum = groupNum;
+          }
+        }
+      }
+
+      // Xử lý Nhóm trưởng (nếu có cột và có giá trị ở dòng này)
+      if (colLeader !== -1 && row[colLeader]) {
+        currentLeader = String(row[colLeader]).trim();
+      }
+
+      const gender = colGender !== -1 && row[colGender] ? String(row[colGender]).trim() : 'Nam';
+      const className = colClass !== -1 && row[colClass] ? String(row[colClass]).trim() : '';
+      const phone = colPhone !== -1 && row[colPhone] ? String(row[colPhone]).trim() : '';
+      const email = colEmail !== -1 && row[colEmail] ? String(row[colEmail]).trim() : '';
       
-      let rawGroup = String(row['Nhóm'] || row['groupNum'] || row['group_num'] || '1');
-      const matchNum = rawGroup.match(/\d+/);
-      let groupNum = matchNum ? Number(matchNum[0]) : 1;
-      if (isNaN(groupNum) || groupNum < 1 || groupNum > 8) groupNum = 1;
-
-      const gender = String(row['Giới tính'] || row['gender'] || 'Nam').trim();
-      const className = String(row['Lớp'] || row['className'] || row['class_name'] || '').trim();
-      const phone = String(row['Số điện thoại'] || row['SĐT'] || row['phone'] || '').trim();
-      const email = String(row['Email'] || row['email'] || '').trim();
-      let role = String(row['Chức vụ'] || row['role'] || 'Thành viên').trim();
-
-      if (!mssv || !fullName) {
-        errors.push(`Dòng ${i + 2}: Thiếu MSSV hoặc Họ tên`);
-        continue;
+      let role = 'Thành viên';
+      if (colRole !== -1 && row[colRole]) {
+        role = String(row[colRole]).trim();
       }
 
       try {
@@ -723,23 +792,23 @@ router.post('/import-file', upload.single('file'), async (req, res) => {
             UPDATE ctv_members 
             SET full_name = ?, group_num = ?, role = ?, gender = ?, class_name = ?, phone = ?, email = ?
             WHERE id = ?
-          `, [fullName, groupNum, role, gender, className, phone, email, existing.id]);
+          `, [fullName, currentGroupNum, role, gender, className, phone, email, existing.id]);
           updatedCount++;
         } else {
           await db.run(`
             INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'Đang hoạt động')
-          `, [mssv, fullName, groupNum, role, gender, className, phone, email]);
+          `, [mssv, fullName, currentGroupNum, role, gender, className, phone, email]);
           importedCount++;
         }
       } catch (err) {
-        errors.push(`Dòng ${i + 2} (${mssv}): ${err.message}`);
+        errors.push(`Dòng ${i + 1} (${mssv}): ${err.message}`);
       }
     }
 
     res.json({
       success: true,
-      message: `Nhập file hoàn tất: Đã thêm mới ${importedCount} và cập nhật ${updatedCount} CTV.`,
+      message: `Nhập file hoàn tất: Đã thêm mới ${importedCount} và cập nhật ${updatedCount} CTV từ ${rawData.length - headerRowIdx - 1} dòng dữ liệu.`,
       importedCount,
       updatedCount,
       errors
