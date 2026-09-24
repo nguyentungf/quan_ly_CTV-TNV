@@ -86,6 +86,9 @@ export function checkGroupPermission(expectedTargetType) {
 
       // 3. Nếu thao tác hàng loạt (bulk-action)
       if (req.body?.memberIds && Array.isArray(req.body.memberIds)) {
+        if (req.body.memberIds.length === 0) {
+          return next();
+        }
         const table = expectedTargetType === 'ctv' ? 'ctv_members' : 'tnv_members';
         const placeholders = req.body.memberIds.map(() => '?').join(',');
         const otherGroupMembers = await db.all(
@@ -104,3 +107,4 @@ export function checkGroupPermission(expectedTargetType) {
     });
   };
 }
+

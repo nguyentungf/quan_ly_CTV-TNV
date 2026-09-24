@@ -41,7 +41,7 @@ router.get('/members', async (req, res) => {
 
     // Gắn tỷ lệ benchmark so với Top 1
     const membersWithBenchmark = rows.map(m => {
-      const benchmarkRate = maxScore > 0 ? Math.min(100, Math.round((m.total_points / maxScore) * 100)) : 0;
+      const benchmarkRate = maxScore > 0 ? Math.max(0, Math.min(100, Math.round((m.total_points / maxScore) * 100))) : 0;
       return {
         ...m,
         benchmarkRate,

@@ -210,10 +210,10 @@ router.post('/:id/register', requireAuth, async (req, res) => {
     }
 
     // Kiểm tra nếu là Nhóm trưởng thì chỉ được đăng ký cho thành viên nhóm mình
-    if (req.user.role !== 'admin' && Number(req.user.groupNum) !== Number(groupNum)) {
+    if (req.user.role !== 'admin' && (req.user.targetType !== memberType || Number(req.user.groupNum) !== Number(groupNum))) {
       return res.status(403).json({
         success: false,
-        message: `Bạn là Nhóm trưởng Nhóm ${req.user.groupNum}, không được đăng ký cho thành viên Nhóm ${groupNum}!`
+        message: `Bạn là Nhóm trưởng Nhóm ${req.user.groupNum} (${req.user.targetType?.toUpperCase()}), không có quyền đăng ký cho thành viên Nhóm ${groupNum} (${memberType.toUpperCase()})!`
       });
     }
 
@@ -309,6 +309,16 @@ router.put('/:id/attendance', requireAuth, async (req, res) => {
     const reg = await db.get('SELECT * FROM campaign_registrations WHERE id = ?', [Number(registrationId)]);
     if (!reg) return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin đăng ký' });
 
+    // Kiểm tra quyền hạn nếu là Nhóm trưởng
+    if (req.user.role !== 'admin') {
+      if (req.user.targetType !== reg.member_type || Number(req.user.groupNum) !== Number(reg.group_num)) {
+        return res.status(403).json({
+          success: false,
+          message: `Bạn chỉ có quyền điểm danh cho thành viên thuộc Nhóm ${req.user.groupNum} (${req.user.targetType?.toUpperCase()})!`
+        });
+      }
+    }
+
     const pointsDelta = camp.points || 10;
     const previousAwarded = reg.points_awarded || 0;
     let newAwarded = previousAwarded;
@@ -393,6 +403,16 @@ router.delete('/:id/registrations/:regId', requireAuth, async (req, res) => {
     const { regId } = req.params;
     const reg = await db.get('SELECT * FROM campaign_registrations WHERE id = ?', [Number(regId)]);
     if (!reg) return res.status(404).json({ success: false, message: 'Không tìm thấy đăng ký' });
+
+    // Kiểm tra quyền hạn nếu là Nhóm trưởng
+    if (req.user.role !== 'admin') {
+      if (req.user.targetType !== reg.member_type || Number(req.user.groupNum) !== Number(reg.group_num)) {
+        return res.status(403).json({
+          success: false,
+          message: `Bạn chỉ có quyền hủy đăng ký cho thành viên thuộc Nhóm ${req.user.groupNum} (${req.user.targetType?.toUpperCase()})!`
+        });
+      }
+    }
 
     // Thu hồi điểm nếu đã được cộng
     if (reg.points_awarded > 0) {
