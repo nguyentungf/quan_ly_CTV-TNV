@@ -1,0 +1,25 @@
+{
+  "name": "quan-ly-ctv-tnv",
+  "version": "1.0.0",
+  "description": "Hệ thống Quản lý Cộng Tác Viên (CTV) & Tình Nguyện Viên (TNV)",
+  "scripts": {
+    "build": "cd client && npm install && npm run build && cd ../server && npm install",
+    "render-build": "cd client && npm install && npm run build && cd ../server && npm install",
+    "start": "cd server && npm start",
+    "server": "cd server && npm start",
+    "client": "cd client && npm run dev",
+    "seed": "cd server && npm run seed"
+  },
+  "keywords": [
+    "quan-ly-ctv",
+    "quan-ly-tnv",
+    "react",
+    "express",
+    "postgresql",
+    "sqlite",
+    "render",
+    "fullstack"
+  ],
+  "author": "",
+  "license": "ISC"
+}
