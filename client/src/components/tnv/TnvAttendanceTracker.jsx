@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Trash2, CheckCircle2, XCircle, Clock, Zap } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useAuth } from '../../context/AuthContext';
 
 export default function TnvAttendanceTracker({ selectedGroup }) {
   const { addToast } = useToast();
+  const { isAdmin, canEditGroup } = useAuth();
   const [data, setData] = useState({ events: [], tracker: [] });
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(false);
@@ -134,23 +136,27 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleInit19Weeks}
-            disabled={initLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors shadow-2xs"
-            title="Tự động tạo đủ 19 tuần trực cho học kỳ"
-          >
-            <Zap className="w-3.5 h-3.5 text-rose-600" />
-            <span>{initLoading ? 'Đang tạo...' : 'Khởi tạo 19 tuần trực'}</span>
-          </button>
+          {isAdmin && (
+            <button
+              onClick={handleInit19Weeks}
+              disabled={initLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors shadow-2xs cursor-pointer"
+              title="Tự động tạo đủ 19 tuần trực cho học kỳ"
+            >
+              <Zap className="w-3.5 h-3.5 text-rose-600" />
+              <span>{initLoading ? 'Đang tạo...' : 'Khởi tạo 19 tuần trực'}</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setShowAddEventModal(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-sm shadow-rose-200 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Thêm Tuần / Ca Trực</span>
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowAddEventModal(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-sm shadow-rose-200 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Thêm Tuần / Ca Trực</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -176,13 +182,15 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
                   <div className="text-[10px] font-normal text-slate-500">
                     {new Date(ev.event_date || ev.eventDate).toLocaleDateString('vi-VN')}
                   </div>
-                  <button
-                    onClick={() => handleDeleteEvent(ev.id, ev.name)}
-                    title="Xóa cột ca trực này"
-                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleDeleteEvent(ev.id, ev.name)}
+                      title="Xóa cột ca trực này"
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </th>
               ))}
             </tr>
@@ -198,6 +206,8 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
             ) : (
               data.tracker.map((row) => {
                 const m = row.member;
+                const canEdit = canEditGroup('tnv', m.group_num);
+
                 return (
                   <tr key={m.id} className="hover:bg-slate-50/80 transition-colors">
                     {/* Sticky Name Col */}
@@ -227,18 +237,30 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
                       const curStatus = row.attendance[ev.id] || 'vang';
                       return (
                         <td key={ev.id} className="p-2.5 text-center border-r border-slate-100">
-                          <select
-                            value={curStatus}
-                            onChange={(e) => handleStatusChange(m.id, ev.id, e.target.value)}
-                            className={`w-full text-center px-2 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer focus:ring-2 focus:ring-rose-400 focus:outline-none ${
-                              curStatus === 'co_mat'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
-                            }`}
-                          >
-                            <option value="co_mat">✓ Có mặt</option>
-                            <option value="vang">✕ Vắng mặt</option>
-                          </select>
+                          {canEdit ? (
+                            <select
+                              value={curStatus}
+                              onChange={(e) => handleStatusChange(m.id, ev.id, e.target.value)}
+                              className={`w-full text-center px-2 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer focus:ring-2 focus:ring-rose-400 focus:outline-none ${
+                                curStatus === 'co_mat'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                              }`}
+                            >
+                              <option value="co_mat">✓ Có mặt</option>
+                              <option value="vang">✕ Vắng mặt</option>
+                            </select>
+                          ) : (
+                            <span
+                              className={`inline-block w-full py-1 px-2 rounded-lg text-xs font-bold border text-center ${
+                                curStatus === 'co_mat'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-rose-50 text-rose-800 border-rose-200'
+                              }`}
+                            >
+                              {curStatus === 'co_mat' ? '✓ Có mặt' : '✕ Vắng'}
+                            </span>
+                          )}
                         </td>
                       );
                     })}

@@ -7,6 +7,8 @@ import fs from 'fs';
 import ctvRouter from './routes/ctv.js';
 import tnvRouter from './routes/tnv.js';
 import campaignsRouter from './routes/campaigns.js';
+import authRouter from './routes/auth.js';
+import { requireAdmin } from './middleware/auth.js';
 import { db, initSchema } from './db/index.js';
 import { seedDatabase } from './db/seed.js';
 
@@ -21,6 +23,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // API Routes
+app.use('/api/auth', authRouter);
 app.use('/api/ctv', ctvRouter);
 app.use('/api/tnv', tnvRouter);
 app.use('/api/campaigns', campaignsRouter);
@@ -34,8 +37,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Endpoint reset lại database mẫu khi cần
-app.post('/api/reset-seed', async (req, res) => {
+// Endpoint reset lại database mẫu khi cần (Chỉ Admin)
+app.post('/api/reset-seed', requireAdmin, async (req, res) => {
   try {
     await seedDatabase();
     res.json({ success: true, message: 'Đã thiết lập lại dữ liệu mẫu thành công!' });

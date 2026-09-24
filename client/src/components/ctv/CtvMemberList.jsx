@@ -21,11 +21,13 @@ import {
   Users,
   ShieldCheck,
   TrendingUp,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Lock
 } from 'lucide-react';
 import ConfirmModal from '../common/ConfirmModal';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useAuth } from '../../context/AuthContext';
 
 export default function CtvMemberList({
   members = [],
@@ -44,6 +46,7 @@ export default function CtvMemberList({
   onReload,
 }) {
   const { addToast } = useToast();
+  const { user, isAdmin, isGuest, isLeader, canEditGroup, openLoginModal } = useAuth();
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -59,20 +62,25 @@ export default function CtvMemberList({
 
   const memberToDelete = members.find((m) => m.id === deleteConfirmId);
 
-  // Checkbox handlers
-  const allIds = members.map((m) => m.id);
-  const isAllSelected = members.length > 0 && selectedIds.length === members.length;
-  const isIndeterminate = selectedIds.length > 0 && selectedIds.length < members.length;
+  // Checkbox handlers - chỉ cho phép chọn những thành viên có quyền sửa
+  const editableMembers = members.filter((m) => canEditGroup('ctv', m.group_num));
+  const editableIds = editableMembers.map((m) => m.id);
+  const isAllSelected = editableIds.length > 0 && editableIds.every((id) => selectedIds.includes(id));
+  const isIndeterminate = selectedIds.length > 0 && !isAllSelected;
 
   const handleSelectAll = () => {
     if (isAllSelected) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(allIds);
+      setSelectedIds(editableIds);
     }
   };
 
-  const handleToggleRow = (id) => {
+  const handleToggleRow = (id, groupNum) => {
+    if (!canEditGroup('ctv', groupNum)) {
+      addToast('Bạn không có quyền chỉnh sửa nhân sự nhóm này', 'warning');
+      return;
+    }
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
@@ -141,25 +149,29 @@ export default function CtvMemberList({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Gộp Nhóm */}
-            <button
-              onClick={onOpenMergeModal}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-colors shadow-2xs"
-            >
-              <GitMerge className="w-3.5 h-3.5 text-purple-600" />
-              <span>Gộp Nhóm</span>
-            </button>
+            {/* Gộp Nhóm - Chỉ Admin */}
+            {isAdmin && (
+              <button
+                onClick={onOpenMergeModal}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-colors shadow-2xs"
+              >
+                <GitMerge className="w-3.5 h-3.5 text-purple-600" />
+                <span>Gộp Nhóm</span>
+              </button>
+            )}
 
-            {/* Nhập file Excel/CSV */}
-            <button
-              onClick={onOpenImportModal}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors"
-            >
-              <Upload className="w-3.5 h-3.5 text-slate-600" />
-              <span>Nhập Excel / CSV</span>
-            </button>
+            {/* Nhập file Excel/CSV - Chỉ Admin */}
+            {isAdmin && (
+              <button
+                onClick={onOpenImportModal}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors"
+              >
+                <Upload className="w-3.5 h-3.5 text-slate-600" />
+                <span>Nhập Excel / CSV</span>
+              </button>
+            )}
 
-            {/* Xuất file Dropdown (Excel / CSV) */}
+            {/* Xuất file Dropdown (Excel / CSV) - Ai cũng có thể tải */}
             <div className="relative">
               <button
                 onClick={() => setShowExportMenu(!showExportMenu)}
@@ -198,13 +210,24 @@ export default function CtvMemberList({
             </div>
 
             {/* Thêm Mới */}
-            <button
-              onClick={onAddMember}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-200 transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Thêm CTV Mới</span>
-            </button>
+            {isAdmin || (isLeader && user?.targetType === 'ctv') ? (
+              <button
+                onClick={onAddMember}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-200 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Thêm CTV Mới</span>
+              </button>
+            ) : (
+              <button
+                onClick={openLoginModal}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
+                title="Đăng nhập tài khoản để thêm CTV mới"
+              >
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <span>Thêm CTV</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -267,12 +290,14 @@ export default function CtvMemberList({
             >
               Đổi trạng thái
             </button>
-            <button
-              onClick={() => setShowBulkModal('group')}
-              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors border border-slate-700"
-            >
-              Chuyển nhóm
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowBulkModal('group')}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors border border-slate-700"
+              >
+                Chuyển nhóm
+              </button>
+            )}
             <button
               onClick={() => setShowBulkModal('points')}
               className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
@@ -304,9 +329,11 @@ export default function CtvMemberList({
                 <input
                   type="checkbox"
                   checked={isAllSelected}
+                  disabled={editableIds.length === 0}
                   ref={(el) => el && (el.indeterminate = isIndeterminate)}
                   onChange={handleSelectAll}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={editableIds.length > 0 ? "Chọn tất cả thành viên có quyền thao tác" : "Bạn không có quyền thao tác nhân sự nhóm nào"}
                 />
               </th>
               <th className="p-3.5">MSSV</th>
@@ -336,6 +363,7 @@ export default function CtvMemberList({
                 const isLeader = m.role === 'Nhóm trưởng';
                 const isDeputy = m.role === 'Nhóm phó';
                 const isSelected = selectedIds.includes(m.id);
+                const canEdit = canEditGroup('ctv', m.group_num);
 
                 return (
                   <tr
@@ -349,8 +377,10 @@ export default function CtvMemberList({
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() => handleToggleRow(m.id)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        disabled={!canEdit}
+                        onChange={() => handleToggleRow(m.id, m.group_num)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                        title={canEdit ? 'Chọn để thao tác hàng loạt' : 'Chỉ Nhóm trưởng nhóm này hoặc Admin mới có quyền'}
                       />
                     </td>
 
@@ -457,29 +487,33 @@ export default function CtvMemberList({
 
                     {/* Thao tác cá nhân */}
                     <td className="p-3.5 pr-5 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => onRateMember(m)}
-                          title="Đánh giá thái độ & Ghi nhận hoạt động"
-                          className="p-1.5 rounded-lg text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 transition-colors"
-                        >
-                          <Award className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onEditMember(m)}
-                          title="Chỉnh sửa thông tin"
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmId(m.id)}
-                          title="Xóa CTV"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      {canEdit ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => onRateMember(m)}
+                            title="Đánh giá thái độ & Ghi nhận hoạt động"
+                            className="p-1.5 rounded-lg text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 transition-colors"
+                          >
+                            <Award className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => onEditMember(m)}
+                            title="Chỉnh sửa thông tin"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(m.id)}
+                            title="Xóa CTV"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 font-medium italic">Chỉ xem</span>
+                      )}
                     </td>
                   </tr>
                 );

@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Trash2, CheckCircle2, Clock, FileCheck, XCircle, AlertCircle, Percent, Zap } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useAuth } from '../../context/AuthContext';
 
 export default function CtvAttendanceMatrix({ selectedGroup }) {
   const { addToast } = useToast();
+  const { isAdmin, canEditGroup } = useAuth();
   const [data, setData] = useState({ events: [], matrix: [] });
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(false);
@@ -156,23 +158,27 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500"></span>Vắng (-50%)</span>
           </div>
 
-          <button
-            onClick={handleInit19Weeks}
-            disabled={initLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors shadow-2xs"
-            title="Tự động tạo đủ 19 tuần họp cho học kỳ"
-          >
-            <Zap className="w-3.5 h-3.5 text-blue-600" />
-            <span>{initLoading ? 'Đang tạo...' : 'Khởi tạo 19 tuần họp'}</span>
-          </button>
+          {isAdmin && (
+            <button
+              onClick={handleInit19Weeks}
+              disabled={initLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors shadow-2xs cursor-pointer"
+              title="Tự động tạo đủ 19 tuần họp cho học kỳ"
+            >
+              <Zap className="w-3.5 h-3.5 text-blue-600" />
+              <span>{initLoading ? 'Đang tạo...' : 'Khởi tạo 19 tuần họp'}</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setShowAddEventModal(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-200 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Thêm Ngày / Sự kiện</span>
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowAddEventModal(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-200 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Thêm Ngày / Sự kiện</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -200,13 +206,15 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
                   <div className="text-[10px] font-normal text-slate-500">
                     {new Date(ev.event_date || ev.eventDate).toLocaleDateString('vi-VN')}
                   </div>
-                  <button
-                    onClick={() => handleDeleteEvent(ev.id, ev.name)}
-                    title="Xóa cột ngày này"
-                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleDeleteEvent(ev.id, ev.name)}
+                      title="Xóa cột ngày này"
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </th>
               ))}
             </tr>
@@ -223,6 +231,7 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
               data.matrix.map((row) => {
                 const m = row.member;
                 const rate = row.attendanceRate;
+                const canEdit = canEditGroup('ctv', m.group_num);
 
                 let rateColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
                 if (rate < 50) rateColor = 'text-rose-700 bg-rose-50 border-rose-200';
@@ -258,24 +267,46 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
                       const curStatus = row.attendance[ev.id] || 'vang_khong_phep';
                       return (
                         <td key={ev.id} className="p-2.5 text-center border-r border-slate-100">
-                          <select
-                            value={curStatus}
-                            onChange={(e) => handleStatusChange(m.id, ev.id, e.target.value)}
-                            className={`w-full text-center px-2 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none ${
-                              curStatus === 'co_mat'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                          {canEdit ? (
+                            <select
+                              value={curStatus}
+                              onChange={(e) => handleStatusChange(m.id, ev.id, e.target.value)}
+                              className={`w-full text-center px-2 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none ${
+                                curStatus === 'co_mat'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                                  : curStatus === 'di_muon'
+                                  ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                                  : curStatus === 'co_phep'
+                                  ? 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
+                                  : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                              }`}
+                            >
+                              <option value="co_mat">Có mặt (100%)</option>
+                              <option value="di_muon">Đi muộn (50%)</option>
+                              <option value="co_phep">Có phép (0%)</option>
+                              <option value="vang_khong_phep">Vắng (-50%)</option>
+                            </select>
+                          ) : (
+                            <span
+                              className={`inline-block w-full py-1 px-1.5 rounded-lg text-[11px] font-bold border text-center ${
+                                curStatus === 'co_mat'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : curStatus === 'di_muon'
+                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                  : curStatus === 'co_phep'
+                                  ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                  : 'bg-rose-50 text-rose-800 border-rose-200'
+                              }`}
+                            >
+                              {curStatus === 'co_mat'
+                                ? 'Có mặt'
                                 : curStatus === 'di_muon'
-                                ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                                ? 'Đi muộn'
                                 : curStatus === 'co_phep'
-                                ? 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
-                                : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
-                            }`}
-                          >
-                            <option value="co_mat">Có mặt (100%)</option>
-                            <option value="di_muon">Đi muộn (50%)</option>
-                            <option value="co_phep">Có phép (0%)</option>
-                            <option value="vang_khong_phep">Vắng (-50%)</option>
-                          </select>
+                                ? 'Có phép'
+                                : 'Vắng'}
+                            </span>
+                          )}
                         </td>
                       );
                     })}

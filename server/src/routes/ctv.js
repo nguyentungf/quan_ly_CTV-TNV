@@ -2,6 +2,7 @@ import express from 'express';
 import { db } from '../db/index.js';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
+import { requireAuth, requireAdmin, checkGroupPermission } from '../middleware/auth.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -36,7 +37,7 @@ router.get('/members', async (req, res) => {
 });
 
 // 2. Thêm mới CTV
-router.post('/members', async (req, res) => {
+router.post('/members', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { mssv, fullName, groupNum, role, gender, className, phone, email, status } = req.body;
     if (!mssv || !fullName || !groupNum) {
@@ -69,7 +70,7 @@ router.post('/members', async (req, res) => {
 });
 
 // 3. Cập nhật thông tin CTV
-router.put('/members/:id', async (req, res) => {
+router.put('/members/:id', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { id } = req.params;
     const { fullName, groupNum, role, gender, className, phone, email, status } = req.body;
@@ -97,7 +98,7 @@ router.put('/members/:id', async (req, res) => {
 });
 
 // 4. Xóa CTV
-router.delete('/members/:id', async (req, res) => {
+router.delete('/members/:id', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { id } = req.params;
     await db.run('DELETE FROM ctv_members WHERE id = ?', [Number(id)]);
@@ -108,7 +109,7 @@ router.delete('/members/:id', async (req, res) => {
 });
 
 // 5. Thao tác hàng loạt (Bulk Actions)
-router.post('/bulk-action', async (req, res) => {
+router.post('/bulk-action', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { action, memberIds, payload } = req.body;
     if (!action || !memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
@@ -214,7 +215,7 @@ router.get('/events', async (req, res) => {
 });
 
 // 8. Khởi tạo nhanh 19 tuần họp trong kỳ
-router.post('/init-19-weeks', async (req, res) => {
+router.post('/init-19-weeks', requireAdmin, async (req, res) => {
   try {
     const baseDate = new Date();
     const existing = await db.all('SELECT * FROM ctv_events');
@@ -253,7 +254,7 @@ router.post('/init-19-weeks', async (req, res) => {
 });
 
 // 9. Thêm ngày điểm danh mới
-router.post('/events', async (req, res) => {
+router.post('/events', requireAdmin, async (req, res) => {
   try {
     const { name, eventDate } = req.body;
     if (!name || !eventDate) {
@@ -281,7 +282,7 @@ router.post('/events', async (req, res) => {
 });
 
 // 10. Xóa ngày điểm danh
-router.delete('/events/:id', async (req, res) => {
+router.delete('/events/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     await db.run('DELETE FROM ctv_attendance WHERE event_id = ?', [Number(id)]);
@@ -355,7 +356,7 @@ router.get('/attendance-matrix', async (req, res) => {
 });
 
 // 12. Cập nhật ô điểm danh
-router.post('/attendance', async (req, res) => {
+router.post('/attendance', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { memberId, eventId, status } = req.body;
     if (!memberId || !eventId || !status) {
@@ -375,7 +376,7 @@ router.post('/attendance', async (req, res) => {
 });
 
 // 13. Đánh giá thái độ & Ghi nhận hoạt động
-router.post('/attitude-activity', async (req, res) => {
+router.post('/attitude-activity', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { memberId, type, title, pointsDelta, note } = req.body;
     if (!memberId || !type || !title || pointsDelta === undefined) {
@@ -430,7 +431,7 @@ router.get('/point-logs/:memberId', async (req, res) => {
 });
 
 // 15. Gộp nhóm CTV
-router.post('/merge-groups', async (req, res) => {
+router.post('/merge-groups', requireAdmin, async (req, res) => {
   try {
     const { sourceGroup, targetGroup, notes } = req.body;
     const src = Number(sourceGroup);
@@ -675,7 +676,7 @@ router.get('/sample-csv', (req, res) => {
 });
 
 // 21. Nhập file (Hỗ trợ cả .xlsx, .xls và .csv, tự động nhận diện header dù có tiêu đề/banner phía trên)
-router.post('/import-file', upload.single('file'), async (req, res) => {
+router.post('/import-file', requireAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'Vui lòng đính kèm file .xlsx hoặc .csv!' });

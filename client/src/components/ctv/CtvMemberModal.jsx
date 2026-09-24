@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Save } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useAuth } from '../../context/AuthContext';
 
 export default function CtvMemberModal({
   isOpen,
@@ -10,6 +11,7 @@ export default function CtvMemberModal({
   editingMember = null,
 }) {
   const { addToast } = useToast();
+  const { user, isLeader } = useAuth();
   const [formData, setFormData] = useState({
     mssv: '',
     fullName: '',
@@ -37,10 +39,11 @@ export default function CtvMemberModal({
         status: editingMember.status || 'Đang hoạt động',
       });
     } else {
+      const defaultGroup = (isLeader && user?.targetType === 'ctv' && user?.groupNum) ? Number(user.groupNum) : 1;
       setFormData({
         mssv: '',
         fullName: '',
-        groupNum: 1,
+        groupNum: defaultGroup,
         role: 'Thành viên',
         gender: 'Nam',
         className: '',
@@ -49,7 +52,7 @@ export default function CtvMemberModal({
         status: 'Đang hoạt động',
       });
     }
-  }, [editingMember, isOpen]);
+  }, [editingMember, isOpen, isLeader, user]);
 
   if (!isOpen) return null;
 
@@ -152,8 +155,11 @@ export default function CtvMemberModal({
               </label>
               <select
                 value={formData.groupNum}
+                disabled={isLeader}
                 onChange={(e) => setFormData({ ...formData, groupNum: Number(e.target.value) })}
-                className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                className={`w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white ${
+                  isLeader ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''
+                }`}
               >
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((g) => (
                   <option key={g} value={g}>

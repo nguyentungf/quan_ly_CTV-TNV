@@ -286,6 +286,17 @@ export async function initSchema() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(campaign_id, member_type, member_id)
       );
+
+      CREATE TABLE IF NOT EXISTS system_auth (
+        id SERIAL PRIMARY KEY,
+        role VARCHAR(50) NOT NULL,
+        target_type VARCHAR(20) NOT NULL,
+        group_num INTEGER,
+        display_name VARCHAR(255) NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(role, target_type, group_num)
+      );
     `);
     console.log('✅ Khởi tạo cấu trúc bảng PostgreSQL hoàn tất!');
   } else {
@@ -407,6 +418,17 @@ export async function initSchema() {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(campaign_id, member_type, member_id)
       );
+
+      CREATE TABLE IF NOT EXISTS system_auth (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        group_num INTEGER,
+        display_name TEXT NOT NULL,
+        password TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(role, target_type, group_num)
+      );
     `);
 
     // Migration an toàn các cột mới nếu đã có file sqlite cũ
@@ -414,6 +436,43 @@ export async function initSchema() {
     try { sqlite.exec(`ALTER TABLE ctv_members ADD COLUMN class_name TEXT DEFAULT ''`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE tnv_members ADD COLUMN gender TEXT DEFAULT 'Nam'`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE tnv_members ADD COLUMN class_name TEXT DEFAULT ''`); } catch (e) {}
+  }
+
+  // Tự động kiểm tra và tạo tài khoản xác thực mặc định nếu chưa có
+  try {
+    const authCountRes = await db.get('SELECT COUNT(*) as count FROM system_auth');
+    const authCount = Number(authCountRes?.count || 0);
+
+    if (authCount === 0) {
+      console.log('🔐 Khởi tạo danh sách tài khoản & mật khẩu mặc định cho hệ thống...');
+      // 1. Tài khoản Ban Chủ Nhiệm (Admin)
+      await db.run(`
+        INSERT INTO system_auth (role, target_type, group_num, display_name, password)
+        VALUES ('admin', 'admin', 0, 'Ban Chủ Nhiệm (Admin)', 'admin123')
+        ON CONFLICT (role, target_type, group_num) DO NOTHING
+      `);
+
+      // 2. Mật khẩu 8 Nhóm trưởng CTV
+      for (let g = 1; g <= 8; g++) {
+        await db.run(`
+          INSERT INTO system_auth (role, target_type, group_num, display_name, password)
+          VALUES ('ctv_leader', 'ctv', ?, ?, ?)
+          ON CONFLICT (role, target_type, group_num) DO NOTHING
+        `, [g, `Nhóm trưởng Nhóm ${g} (CTV)`, `ctv${g}@123`]);
+      }
+
+      // 3. Mật khẩu 4 Nhóm trưởng TNV
+      for (let g = 1; g <= 4; g++) {
+        await db.run(`
+          INSERT INTO system_auth (role, target_type, group_num, display_name, password)
+          VALUES ('tnv_leader', 'tnv', ?, ?, ?)
+          ON CONFLICT (role, target_type, group_num) DO NOTHING
+        `, [g, `Nhóm trưởng Nhóm ${g} (TNV)`, `tnv${g}@123`]);
+      }
+      console.log('✅ Khởi tạo mật khẩu xác thực ban đầu hoàn tất!');
+    }
+  } catch (authErr) {
+    console.warn('Lưu ý khi khởi tạo system_auth:', authErr.message);
   }
 }
 

@@ -2,6 +2,7 @@ import express from 'express';
 import { db } from '../db/index.js';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
+import { requireAuth, requireAdmin, checkGroupPermission } from '../middleware/auth.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -59,7 +60,7 @@ router.get('/members', async (req, res) => {
 });
 
 // 2. Thêm mới TNV
-router.post('/members', async (req, res) => {
+router.post('/members', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { mssv, fullName, groupNum, role, gender, className, phone, email, status } = req.body;
     if (!mssv || !fullName || !groupNum) {
@@ -92,7 +93,7 @@ router.post('/members', async (req, res) => {
 });
 
 // 3. Cập nhật thông tin TNV
-router.put('/members/:id', async (req, res) => {
+router.put('/members/:id', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { id } = req.params;
     const { fullName, groupNum, role, gender, className, phone, email, status } = req.body;
@@ -120,7 +121,7 @@ router.put('/members/:id', async (req, res) => {
 });
 
 // 4. Xóa TNV
-router.delete('/members/:id', async (req, res) => {
+router.delete('/members/:id', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { id } = req.params;
     await db.run('DELETE FROM tnv_members WHERE id = ?', [Number(id)]);
@@ -131,7 +132,7 @@ router.delete('/members/:id', async (req, res) => {
 });
 
 // 5. Thao tác hàng loạt (Bulk Actions) cho TNV
-router.post('/bulk-action', async (req, res) => {
+router.post('/bulk-action', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { action, memberIds, payload } = req.body;
     if (!action || !memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
@@ -260,7 +261,7 @@ router.get('/discipline', async (req, res) => {
 });
 
 // 9. Cập nhật trạng thái kỷ luật của 1 TNV
-router.put('/warning/:id', async (req, res) => {
+router.put('/warning/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { warningLevel, warningNote } = req.body;
@@ -292,7 +293,7 @@ router.get('/events', async (req, res) => {
 });
 
 // 11. Khởi tạo nhanh 19 tuần học trong kỳ cho TNV
-router.post('/init-19-weeks', async (req, res) => {
+router.post('/init-19-weeks', requireAdmin, async (req, res) => {
   try {
     const baseDate = new Date();
     const existing = await db.all('SELECT * FROM tnv_events');
@@ -330,7 +331,7 @@ router.post('/init-19-weeks', async (req, res) => {
 });
 
 // 12. Thêm ca trực / tuần trực mới
-router.post('/events', async (req, res) => {
+router.post('/events', requireAdmin, async (req, res) => {
   try {
     const { name, eventDate } = req.body;
     if (!name || !eventDate) {
@@ -359,7 +360,7 @@ router.post('/events', async (req, res) => {
 });
 
 // 13. Xóa ca trực
-router.delete('/events/:id', async (req, res) => {
+router.delete('/events/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     await db.run('DELETE FROM tnv_attendance WHERE event_id = ?', [Number(id)]);
@@ -426,7 +427,7 @@ router.get('/attendance-matrix', async (req, res) => {
 });
 
 // 15. Cập nhật ô điểm danh TNV
-router.post('/attendance', async (req, res) => {
+router.post('/attendance', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { memberId, eventId, status } = req.body;
     if (!memberId || !eventId || !status) {
@@ -446,7 +447,7 @@ router.post('/attendance', async (req, res) => {
 });
 
 // 16. Ghi nhận hoạt động tích lũy điểm TNV
-router.post('/activities', async (req, res) => {
+router.post('/activities', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { memberId, category, points, note } = req.body;
     if (!memberId || !category || points === undefined) {
@@ -667,7 +668,7 @@ router.get('/sample-csv', (req, res) => {
 });
 
 // 22. Nhập file (Hỗ trợ cả .xlsx, .xls và .csv, tự động nhận diện header dù có tiêu đề/banner phía trên)
-router.post('/import-file', upload.single('file'), async (req, res) => {
+router.post('/import-file', requireAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'Vui lòng đính kèm file .xlsx hoặc .csv!' });

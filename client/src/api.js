@@ -2,16 +2,66 @@
 
 const API_BASE = '/api';
 
+const getToken = () => localStorage.getItem('auth_token') || '';
+
+async function authFetch(url, options = {}) {
+  const token = getToken();
+  const headers = {
+    ...options.headers,
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return fetch(url, { ...options, headers });
+}
+
 export const api = {
+  // ===================== AUTH APIs =====================
+  login: async (data) => {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  getMe: async () => {
+    const res = await authFetch(`${API_BASE}/auth/me`);
+    return res.json();
+  },
+
+  getPasswords: async () => {
+    const res = await authFetch(`${API_BASE}/auth/passwords`);
+    return res.json();
+  },
+
+  resetPassword: async (data) => {
+    const res = await authFetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  resetAllDefaultPasswords: async () => {
+    const res = await authFetch(`${API_BASE}/auth/reset-all-default`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return res.json();
+  },
+
   // ===================== CTV APIs =====================
   getCtvMembers: async (params = {}) => {
     const q = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE}/ctv/members?${q}`);
+    const res = await authFetch(`${API_BASE}/ctv/members?${q}`);
     return res.json();
   },
 
   createCtvMember: async (data) => {
-    const res = await fetch(`${API_BASE}/ctv/members`, {
+    const res = await authFetch(`${API_BASE}/ctv/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -20,7 +70,7 @@ export const api = {
   },
 
   updateCtvMember: async (id, data) => {
-    const res = await fetch(`${API_BASE}/ctv/members/${id}`, {
+    const res = await authFetch(`${API_BASE}/ctv/members/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -29,14 +79,14 @@ export const api = {
   },
 
   deleteCtvMember: async (id) => {
-    const res = await fetch(`${API_BASE}/ctv/members/${id}`, {
+    const res = await authFetch(`${API_BASE}/ctv/members/${id}`, {
       method: 'DELETE',
     });
     return res.json();
   },
 
   bulkActionCtv: async (action, memberIds, payload = {}) => {
-    const res = await fetch(`${API_BASE}/ctv/bulk-action`, {
+    const res = await authFetch(`${API_BASE}/ctv/bulk-action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, memberIds, payload }),
@@ -45,22 +95,22 @@ export const api = {
   },
 
   getCtvGroupsSummary: async () => {
-    const res = await fetch(`${API_BASE}/ctv/groups-summary`);
+    const res = await authFetch(`${API_BASE}/ctv/groups-summary`);
     return res.json();
   },
 
   getCtvEvents: async () => {
-    const res = await fetch(`${API_BASE}/ctv/events`);
+    const res = await authFetch(`${API_BASE}/ctv/events`);
     return res.json();
   },
 
   initCtv19Weeks: async () => {
-    const res = await fetch(`${API_BASE}/ctv/init-19-weeks`, { method: 'POST' });
+    const res = await authFetch(`${API_BASE}/ctv/init-19-weeks`, { method: 'POST' });
     return res.json();
   },
 
   createCtvEvent: async (data) => {
-    const res = await fetch(`${API_BASE}/ctv/events`, {
+    const res = await authFetch(`${API_BASE}/ctv/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -69,7 +119,7 @@ export const api = {
   },
 
   deleteCtvEvent: async (id) => {
-    const res = await fetch(`${API_BASE}/ctv/events/${id}`, {
+    const res = await authFetch(`${API_BASE}/ctv/events/${id}`, {
       method: 'DELETE',
     });
     return res.json();
@@ -77,21 +127,21 @@ export const api = {
 
   getCtvAttendanceMatrix: async (params = {}) => {
     const q = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE}/ctv/attendance-matrix?${q}`);
+    const res = await authFetch(`${API_BASE}/ctv/attendance-matrix?${q}`);
     return res.json();
   },
 
-  updateCtvAttendance: async (memberId, eventId, status) => {
-    const res = await fetch(`${API_BASE}/ctv/attendance`, {
+  updateCtvAttendance: async (data) => {
+    const res = await authFetch(`${API_BASE}/ctv/attendance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ memberId, eventId, status }),
+      body: JSON.stringify(data),
     });
     return res.json();
   },
 
-  rateCtvAttitudeActivity: async (data) => {
-    const res = await fetch(`${API_BASE}/ctv/attitude-activity`, {
+  submitCtvAttitudeActivity: async (data) => {
+    const res = await authFetch(`${API_BASE}/ctv/attitude-activity`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -100,47 +150,46 @@ export const api = {
   },
 
   getCtvPointLogs: async (memberId) => {
-    const res = await fetch(`${API_BASE}/ctv/point-logs/${memberId}`);
+    const res = await authFetch(`${API_BASE}/ctv/point-logs/${memberId}`);
     return res.json();
   },
 
-  mergeCtvGroups: async (sourceGroup, targetGroup, notes) => {
-    const res = await fetch(`${API_BASE}/ctv/merge-groups`, {
+  mergeCtvGroups: async (data) => {
+    const res = await authFetch(`${API_BASE}/ctv/merge-groups`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceGroup, targetGroup, notes }),
+      body: JSON.stringify(data),
     });
     return res.json();
   },
 
   getCtvMergeLogs: async () => {
-    const res = await fetch(`${API_BASE}/ctv/merge-logs`);
+    const res = await authFetch(`${API_BASE}/ctv/merge-logs`);
     return res.json();
   },
 
-  importCtvFile: async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
+  importCtvFile: async (formData) => {
+    const token = getToken();
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const res = await fetch(`${API_BASE}/ctv/import-file`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     return res.json();
   },
 
-  importCtvCsv: async (file) => {
-    return api.importCtvFile(file);
-  },
-
   // ===================== TNV APIs =====================
   getTnvMembers: async (params = {}) => {
     const q = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE}/tnv/members?${q}`);
+    const res = await authFetch(`${API_BASE}/tnv/members?${q}`);
     return res.json();
   },
 
   createTnvMember: async (data) => {
-    const res = await fetch(`${API_BASE}/tnv/members`, {
+    const res = await authFetch(`${API_BASE}/tnv/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -149,7 +198,7 @@ export const api = {
   },
 
   updateTnvMember: async (id, data) => {
-    const res = await fetch(`${API_BASE}/tnv/members/${id}`, {
+    const res = await authFetch(`${API_BASE}/tnv/members/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -158,14 +207,14 @@ export const api = {
   },
 
   deleteTnvMember: async (id) => {
-    const res = await fetch(`${API_BASE}/tnv/members/${id}`, {
+    const res = await authFetch(`${API_BASE}/tnv/members/${id}`, {
       method: 'DELETE',
     });
     return res.json();
   },
 
   bulkActionTnv: async (action, memberIds, payload = {}) => {
-    const res = await fetch(`${API_BASE}/tnv/bulk-action`, {
+    const res = await authFetch(`${API_BASE}/tnv/bulk-action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, memberIds, payload }),
@@ -174,41 +223,41 @@ export const api = {
   },
 
   getTnvGroupsSummary: async () => {
-    const res = await fetch(`${API_BASE}/tnv/groups-summary`);
+    const res = await authFetch(`${API_BASE}/tnv/groups-summary`);
     return res.json();
   },
 
-  getTnvLeaderboard: async () => {
-    const res = await fetch(`${API_BASE}/tnv/leaderboard`);
+  getTnvTop5: async () => {
+    const res = await authFetch(`${API_BASE}/tnv/top-5`);
     return res.json();
   },
 
-  getTnvDisciplineBoard: async () => {
-    const res = await fetch(`${API_BASE}/tnv/discipline-board`);
+  getTnvDiscipline: async () => {
+    const res = await authFetch(`${API_BASE}/tnv/discipline`);
     return res.json();
   },
 
-  updateTnvWarning: async (memberId, warningLevel, warningNote) => {
-    const res = await fetch(`${API_BASE}/tnv/warning`, {
-      method: 'POST',
+  updateTnvWarning: async (id, data) => {
+    const res = await authFetch(`${API_BASE}/tnv/warning/${id}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ memberId, warningLevel, warningNote }),
+      body: JSON.stringify(data),
     });
     return res.json();
   },
 
   getTnvEvents: async () => {
-    const res = await fetch(`${API_BASE}/tnv/events`);
+    const res = await authFetch(`${API_BASE}/tnv/events`);
     return res.json();
   },
 
   initTnv19Weeks: async () => {
-    const res = await fetch(`${API_BASE}/tnv/init-19-weeks`, { method: 'POST' });
+    const res = await authFetch(`${API_BASE}/tnv/init-19-weeks`, { method: 'POST' });
     return res.json();
   },
 
   createTnvEvent: async (data) => {
-    const res = await fetch(`${API_BASE}/tnv/events`, {
+    const res = await authFetch(`${API_BASE}/tnv/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -217,29 +266,29 @@ export const api = {
   },
 
   deleteTnvEvent: async (id) => {
-    const res = await fetch(`${API_BASE}/tnv/events/${id}`, {
+    const res = await authFetch(`${API_BASE}/tnv/events/${id}`, {
       method: 'DELETE',
     });
     return res.json();
   },
 
-  getTnvAttendanceTracker: async (params = {}) => {
+  getTnvAttendanceMatrix: async (params = {}) => {
     const q = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE}/tnv/attendance-tracker?${q}`);
+    const res = await authFetch(`${API_BASE}/tnv/attendance-matrix?${q}`);
     return res.json();
   },
 
-  updateTnvAttendance: async (memberId, eventId, status) => {
-    const res = await fetch(`${API_BASE}/tnv/attendance`, {
+  updateTnvAttendance: async (data) => {
+    const res = await authFetch(`${API_BASE}/tnv/attendance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ memberId, eventId, status }),
+      body: JSON.stringify(data),
     });
     return res.json();
   },
 
-  recordTnvActivity: async (data) => {
-    const res = await fetch(`${API_BASE}/tnv/activities`, {
+  submitTnvActivity: async (data) => {
+    const res = await authFetch(`${API_BASE}/tnv/activities`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -248,33 +297,32 @@ export const api = {
   },
 
   getTnvActivities: async (memberId) => {
-    const res = await fetch(`${API_BASE}/tnv/activities/${memberId}`);
+    const res = await authFetch(`${API_BASE}/tnv/activities/${memberId}`);
     return res.json();
   },
 
-  importTnvFile: async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
+  importTnvFile: async (formData) => {
+    const token = getToken();
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const res = await fetch(`${API_BASE}/tnv/import-file`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     return res.json();
   },
 
-  importTnvCsv: async (file) => {
-    return api.importTnvFile(file);
-  },
-
-  // ===================== CAMPAIGNS & ACTIVITIES APIs =====================
+  // ===================== CAMPAIGNS APIs =====================
   getCampaigns: async (params = {}) => {
     const q = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE}/campaigns?${q}`);
+    const res = await authFetch(`${API_BASE}/campaigns?${q}`);
     return res.json();
   },
 
   createCampaign: async (data) => {
-    const res = await fetch(`${API_BASE}/campaigns`, {
+    const res = await authFetch(`${API_BASE}/campaigns`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -283,7 +331,7 @@ export const api = {
   },
 
   updateCampaign: async (id, data) => {
-    const res = await fetch(`${API_BASE}/campaigns/${id}`, {
+    const res = await authFetch(`${API_BASE}/campaigns/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -292,7 +340,7 @@ export const api = {
   },
 
   deleteCampaign: async (id) => {
-    const res = await fetch(`${API_BASE}/campaigns/${id}`, {
+    const res = await authFetch(`${API_BASE}/campaigns/${id}`, {
       method: 'DELETE',
     });
     return res.json();
@@ -300,12 +348,12 @@ export const api = {
 
   getCampaignRegistrations: async (id, params = {}) => {
     const q = new URLSearchParams(params).toString();
-    const res = await fetch(`${API_BASE}/campaigns/${id}/registrations?${q}`);
+    const res = await authFetch(`${API_BASE}/campaigns/${id}/registrations?${q}`);
     return res.json();
   },
 
   registerCampaign: async (campaignId, data) => {
-    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/register`, {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -314,7 +362,7 @@ export const api = {
   },
 
   registerCampaignGroup: async (campaignId, data) => {
-    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/register-group`, {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/register-group`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -323,7 +371,7 @@ export const api = {
   },
 
   updateCampaignAttendance: async (campaignId, data) => {
-    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/attendance`, {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/attendance`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -332,7 +380,7 @@ export const api = {
   },
 
   deleteCampaignRegistration: async (campaignId, registrationId) => {
-    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/registrations/${registrationId}`, {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/registrations/${registrationId}`, {
       method: 'DELETE',
     });
     return res.json();
@@ -340,7 +388,7 @@ export const api = {
 
   // Reset database về trạng thái mẫu ban đầu
   resetSeed: async () => {
-    const res = await fetch(`${API_BASE}/reset-seed`, { method: 'POST' });
+    const res = await authFetch(`${API_BASE}/reset-seed`, { method: 'POST' });
     return res.json();
   }
 };

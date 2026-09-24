@@ -1,6 +1,7 @@
 import express from 'express';
 import { db } from '../db/index.js';
 import * as XLSX from 'xlsx';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -42,7 +43,7 @@ router.get('/', async (req, res) => {
 });
 
 // 2. Thêm hoạt động mới
-router.post('/', async (req, res) => {
+router.post('/', requireAdmin, async (req, res) => {
   try {
     const { name, description, location, eventDate, points, targetType, status } = req.body;
     if (!name || !eventDate) {
@@ -70,7 +71,7 @@ router.post('/', async (req, res) => {
 });
 
 // 3. Cập nhật hoạt động
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, location, eventDate, points, targetType, status } = req.body;
@@ -97,7 +98,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // 4. Xóa hoạt động
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     await db.run('DELETE FROM campaign_registrations WHERE campaign_id = ?', [Number(id)]);
@@ -179,7 +180,7 @@ router.get('/:id/registrations', async (req, res) => {
 });
 
 // 6. Đăng ký cá nhân vào hoạt động
-router.post('/:id/register', async (req, res) => {
+router.post('/:id/register', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { memberType, memberId, registeredBy } = req.body;
@@ -208,11 +209,19 @@ router.post('/:id/register', async (req, res) => {
       if (m) groupNum = m.group_num;
     }
 
+    // Kiểm tra nếu là Nhóm trưởng thì chỉ được đăng ký cho thành viên nhóm mình
+    if (req.user.role !== 'admin' && Number(req.user.groupNum) !== Number(groupNum)) {
+      return res.status(403).json({
+        success: false,
+        message: `Bạn là Nhóm trưởng Nhóm ${req.user.groupNum}, không được đăng ký cho thành viên Nhóm ${groupNum}!`
+      });
+    }
+
     const reg = await db.get(`
       INSERT INTO campaign_registrations (campaign_id, member_type, member_id, group_num, registered_by, attendance_status, points_awarded)
       VALUES (?, ?, ?, ?, ?, 'chua_diem_danh', 0)
       RETURNING *
-    `, [Number(id), memberType, Number(memberId), groupNum, registeredBy || 'Tự đăng ký']);
+    `, [Number(id), memberType, Number(memberId), groupNum, registeredBy || req.user.displayName || 'Tự đăng ký']);
 
     res.json({ success: true, message: 'Đăng ký thành công', data: reg });
   } catch (error) {
@@ -221,7 +230,7 @@ router.post('/:id/register', async (req, res) => {
 });
 
 // 7. NHÓM TRƯỞNG ĐĂNG KÝ HÀNG LOẠT CHO CẢ NHÓM (1 Cú Click)
-router.post('/:id/register-group', async (req, res) => {
+router.post('/:id/register-group', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { memberType, groupNum, registeredBy } = req.body;
@@ -231,6 +240,16 @@ router.post('/:id/register-group', async (req, res) => {
 
     if (!memberType || isNaN(gNum)) {
       return res.status(400).json({ success: false, message: 'Thiếu loại nhân sự hoặc số nhóm' });
+    }
+
+    // Nếu không phải Admin thì chỉ được đăng ký cho nhóm của mình
+    if (req.user.role !== 'admin') {
+      if (req.user.targetType !== memberType || Number(req.user.groupNum) !== gNum) {
+        return res.status(403).json({
+          success: false,
+          message: `Bạn chỉ có quyền đăng ký cho nhóm của mình (Nhóm ${req.user.groupNum} ${req.user.targetType.toUpperCase()})!`
+        });
+      }
     }
 
     // Lấy danh sách thành viên đang hoạt động của nhóm đó
@@ -257,7 +276,7 @@ router.post('/:id/register-group', async (req, res) => {
           await txDb.run(`
             INSERT INTO campaign_registrations (campaign_id, member_type, member_id, group_num, registered_by, attendance_status, points_awarded)
             VALUES (?, ?, ?, ?, ?, 'chua_diem_danh', 0)
-          `, [campId, memberType, m.id, gNum, registeredBy || `Nhóm trưởng Nhóm ${gNum}`]);
+          `, [campId, memberType, m.id, gNum, registeredBy || req.user.displayName || `Nhóm trưởng Nhóm ${gNum}`]);
           newlyRegistered++;
         }
       }
@@ -275,7 +294,7 @@ router.post('/:id/register-group', async (req, res) => {
 });
 
 // 8. ĐIỂM DANH HOẠT ĐỘNG (Tự động cộng / trừ điểm hoạt động)
-router.put('/:id/attendance', async (req, res) => {
+router.put('/:id/attendance', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { registrationId, attendanceStatus } = req.body;
@@ -369,7 +388,7 @@ router.put('/:id/attendance', async (req, res) => {
 });
 
 // 9. Hủy đăng ký cá nhân
-router.delete('/:id/registrations/:regId', async (req, res) => {
+router.delete('/:id/registrations/:regId', requireAuth, async (req, res) => {
   try {
     const { regId } = req.params;
     const reg = await db.get('SELECT * FROM campaign_registrations WHERE id = ?', [Number(regId)]);

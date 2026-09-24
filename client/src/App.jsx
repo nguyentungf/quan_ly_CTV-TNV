@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import { ToastProvider, useToast } from './components/common/Toast';
+import { AuthProvider } from './context/AuthContext';
+import LoginModal from './components/auth/LoginModal';
+import PasswordManagerModal from './components/auth/PasswordManagerModal';
 import { api } from './api';
 
 // CTV Components
@@ -497,6 +500,10 @@ function DashboardContent() {
           else loadTnvData();
         }}
       />
+
+      {/* Authentication & Security Modals */}
+      <LoginModal />
+      <PasswordManagerModal />
     </div>
   );
 }
@@ -504,7 +511,9 @@ function DashboardContent() {
 export default function App() {
   return (
     <ToastProvider>
-      <DashboardContent />
+      <AuthProvider>
+        <DashboardContent />
+      </AuthProvider>
     </ToastProvider>
   );
 }
