@@ -96,10 +96,10 @@ export default function PasswordManagerModal() {
   const adminItem = passwords.find((p) => p.role === 'admin');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 px-6 py-4 text-white flex justify-between items-center flex-shrink-0">
+        <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 px-4 sm:px-6 py-3.5 sm:py-4 text-white flex justify-between items-center flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-white/15 rounded-xl">
               <Key className="w-5 h-5" />

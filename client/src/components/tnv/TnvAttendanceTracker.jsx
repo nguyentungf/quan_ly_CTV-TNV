@@ -118,9 +118,9 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full max-w-full min-w-0">
       {/* Header */}
-      <div className="p-5 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
+      <div className="p-3.5 sm:p-5 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-slate-800">
@@ -135,7 +135,7 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {isAdmin && (
             <button
               onClick={handleInit19Weeks}
@@ -161,11 +161,11 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
       </div>
 
       {/* Elastic Matrix Table */}
-      <div className="overflow-x-auto relative">
+      <div className="overflow-x-auto relative w-full max-w-full">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-              <th className="p-3.5 sticky left-0 z-20 bg-slate-50 min-w-[200px] border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+              <th className="p-3 sm:p-3.5 sticky left-0 z-20 bg-slate-50 min-w-[150px] sm:min-w-[190px] border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                 Tình Nguyện Viên
               </th>
               <th className="p-3.5 text-center min-w-[120px] border-r border-slate-200">
@@ -211,7 +211,7 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
                 return (
                   <tr key={m.id} className="hover:bg-slate-50/80 transition-colors">
                     {/* Sticky Name Col */}
-                    <td className="p-3 sticky left-0 z-10 bg-white hover:bg-slate-50 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <td className="p-2.5 sm:p-3 sticky left-0 z-10 bg-white hover:bg-slate-50 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] min-w-[150px] sm:min-w-[190px]">
                       <div className="font-bold text-slate-900 truncate" title={m.full_name}>
                         {m.full_name}
                       </div>

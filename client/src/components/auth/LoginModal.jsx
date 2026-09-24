@@ -80,10 +80,10 @@ export default function LoginModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-lg overflow-hidden transition-all transform scale-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-md sm:max-w-lg overflow-hidden flex flex-col max-h-[92vh] transition-all transform scale-100">
         {/* Header Modal */}
-        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-6 py-5 text-white flex justify-between items-center">
+        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-4 sm:px-6 py-3.5 sm:py-4 text-white flex justify-between items-center shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-white/15 rounded-xl backdrop-blur-md">
               <Shield className="w-6 h-6 text-white" />
@@ -101,45 +101,59 @@ export default function LoginModal() {
           </button>
         </div>
 
-        {/* Tab Selection */}
-        <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50/80 p-1.5 gap-1.5 text-sm font-semibold">
+        {/* Role Navigation Bar (Dạng Navigation Thanh Điều Hướng Đa Vai Trò) */}
+        <nav className="flex border-b border-slate-200 bg-slate-50/90 p-1 sm:p-1.5 gap-1 text-xs sm:text-sm font-semibold overflow-x-auto no-scrollbar">
           <button
+            type="button"
             onClick={() => { setTab('guest'); setError(''); }}
-            className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl transition-all ${
+            className={`flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 sm:py-2.5 px-2 rounded-xl transition-all duration-200 cursor-pointer ${
               tab === 'guest'
-                ? 'bg-white text-blue-600 shadow-sm border border-slate-200/80'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-white text-blue-700 shadow-xs border border-slate-200/90 font-bold ring-1 ring-blue-500/20'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60'
             }`}
           >
-            <Eye className="w-4 h-4" />
-            <span>1. Khách xem</span>
+            <Eye className={`w-4 h-4 shrink-0 ${tab === 'guest' ? 'text-blue-600' : 'text-slate-400'}`} />
+            <div className="text-center sm:text-left leading-tight">
+              <span className="block whitespace-nowrap">Khách Xem</span>
+              <span className="text-[10px] text-slate-400 font-normal hidden sm:block">Chỉ xem dữ liệu</span>
+            </div>
           </button>
+
           <button
+            type="button"
             onClick={() => { setTab('leader'); setError(''); }}
-            className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl transition-all ${
+            className={`flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 sm:py-2.5 px-2 rounded-xl transition-all duration-200 cursor-pointer ${
               tab === 'leader'
-                ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/80'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/90 font-bold ring-1 ring-indigo-500/20'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60'
             }`}
           >
-            <Users className="w-4 h-4" />
-            <span>2. Nhóm trưởng</span>
+            <Users className={`w-4 h-4 shrink-0 ${tab === 'leader' ? 'text-indigo-600' : 'text-slate-400'}`} />
+            <div className="text-center sm:text-left leading-tight">
+              <span className="block whitespace-nowrap">Nhóm Trưởng</span>
+              <span className="text-[10px] text-slate-400 font-normal hidden sm:block">Quản lý nhóm</span>
+            </div>
           </button>
+
           <button
+            type="button"
             onClick={() => { setTab('admin'); setError(''); }}
-            className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl transition-all ${
+            className={`flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 sm:py-2.5 px-2 rounded-xl transition-all duration-200 cursor-pointer ${
               tab === 'admin'
-                ? 'bg-white text-purple-600 shadow-sm border border-slate-200/80'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-white text-purple-700 shadow-xs border border-slate-200/90 font-bold ring-1 ring-purple-500/20'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60'
             }`}
           >
-            <Shield className="w-4 h-4" />
-            <span>3. Admin BCN</span>
+            <Shield className={`w-4 h-4 shrink-0 ${tab === 'admin' ? 'text-purple-600' : 'text-slate-400'}`} />
+            <div className="text-center sm:text-left leading-tight">
+              <span className="block whitespace-nowrap">Quản Trị BCN</span>
+              <span className="text-[10px] text-slate-400 font-normal hidden sm:block">Toàn quyền Admin</span>
+            </div>
           </button>
-        </div>
+        </nav>
 
         {/* Body Form */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1">
           {error && (
             <div className="mb-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-xl flex items-center gap-2.5">
               <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-500" />

@@ -19,14 +19,14 @@ export default function TnvOverview({ groups = [], selectedGroup, onSelectGroup 
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {groups.map((g) => {
           const isSelected = selectedGroup === String(g.groupNum);
           return (
             <div
               key={g.groupNum}
               onClick={() => onSelectGroup(isSelected ? 'all' : String(g.groupNum))}
-              className={`p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
+              className={`p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
                 isSelected
                   ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/20 ring-2 ring-rose-300'
                   : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200/80 shadow-xs'

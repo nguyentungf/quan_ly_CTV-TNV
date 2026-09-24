@@ -19,14 +19,14 @@ export default function CtvOverview({ groups = [], selectedGroup, onSelectGroup 
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
         {groups.map((g) => {
           const isSelected = selectedGroup === String(g.groupNum);
           return (
             <div
               key={g.groupNum}
               onClick={() => onSelectGroup(isSelected ? 'all' : String(g.groupNum))}
-              className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
+              className={`p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
                 isSelected
                   ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/25 ring-2 ring-blue-300'
                   : 'bg-white hover:bg-slate-50 text-slate-800 border-slate-200/80 shadow-xs'

@@ -297,17 +297,17 @@ export default function CampaignManager() {
   });
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in min-w-0">
       {/* Top Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md overflow-hidden">
         <div>
-          <span className="text-xs font-black tracking-wider uppercase bg-white/20 px-2.5 py-1 rounded-md">
+          <span className="text-[10px] sm:text-xs font-black tracking-wider uppercase bg-white/20 px-2.5 py-0.5 sm:py-1 rounded-md">
             Phân Hệ Hoạt Động & Sự Kiện
           </span>
-          <h2 className="text-xl font-extrabold mt-2 tracking-tight">
+          <h2 className="text-lg sm:text-xl font-extrabold mt-1.5 sm:mt-2 tracking-tight">
             Quản Lý Hoạt Động, Đăng Ký & Điểm Danh Sự Kiện
           </h2>
-          <p className="text-xs text-emerald-100 max-w-2xl mt-1 leading-relaxed">
+          <p className="text-xs text-emerald-100 max-w-2xl mt-1 leading-relaxed hidden sm:block">
             Hỗ trợ Nhóm trưởng đăng ký hàng loạt 1-click cho cả nhóm, theo dõi danh sách đã và đang tiến hành,
             và điểm danh ghi nhận điểm hoạt động tự động vào hồ sơ nhân sự.
           </p>
@@ -328,7 +328,7 @@ export default function CampaignManager() {
               });
               setShowEditModal(true);
             }}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-emerald-900 bg-white hover:bg-emerald-50 shadow-md transition-all self-start sm:self-center cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold text-emerald-900 bg-white hover:bg-emerald-50 shadow-md transition-all self-start sm:self-center cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4 text-emerald-700" />
             <span>Tạo Hoạt Động Mới</span>
@@ -337,7 +337,7 @@ export default function CampaignManager() {
       </div>
 
       {/* Main Content Layout: Activity List + Detail / Registration Drawer */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 min-w-0">
         {/* Left Column: Campaigns List (5 cols or full) */}
         <div className={`${activeCampaign ? 'lg:col-span-5' : 'lg:col-span-12'} space-y-4`}>
           {/* Filter Bar */}

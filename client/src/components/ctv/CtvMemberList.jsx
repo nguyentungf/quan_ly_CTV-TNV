@@ -129,9 +129,9 @@ export default function CtvMemberList({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden relative">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden relative w-full max-w-full min-w-0">
       {/* Action Toolbar */}
-      <div className="p-4 sm:p-5 border-b border-slate-200/80 space-y-3">
+      <div className="p-3.5 sm:p-5 border-b border-slate-200/80 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
@@ -148,7 +148,7 @@ export default function CtvMemberList({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {/* Gộp Nhóm - Chỉ Admin */}
             {isAdmin && (
               <button
@@ -321,7 +321,7 @@ export default function CtvMemberList({
       )}
 
       {/* Main Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto w-full max-w-full">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">

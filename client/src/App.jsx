@@ -221,50 +221,52 @@ function DashboardContent() {
       />
 
       {/* Main Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6 pb-24 md:pb-8 min-w-0">
         {/* ==================================================== */}
         {/* WORKSPACE 1: CỘNG TÁC VIÊN (CTV)                     */}
         {/* ==================================================== */}
         {activeTab === 'ctv' && (
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-4 sm:space-y-6 animate-fade-in min-w-0">
             {/* Header Description */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white shadow-md">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white shadow-md overflow-hidden">
               <div>
-                <span className="text-xs font-black tracking-wider uppercase bg-white/20 px-2.5 py-1 rounded-md">
+                <span className="text-[10px] sm:text-xs font-black tracking-wider uppercase bg-white/20 px-2.5 py-0.5 sm:py-1 rounded-md">
                   Phân Hệ Quản Lý 1
                 </span>
-                <h2 className="text-xl font-extrabold mt-2 tracking-tight">
+                <h2 className="text-lg sm:text-xl font-extrabold mt-1.5 sm:mt-2 tracking-tight">
                   Quản Lý Đội Ngũ Cộng Tác Viên (CTV)
                 </h2>
-                <p className="text-xs text-blue-100 max-w-2xl mt-1 leading-relaxed">
+                <p className="text-xs text-blue-100 max-w-2xl mt-1 leading-relaxed hidden sm:block">
                   Cơ chế phân cấp 8 nhóm với nhóm trưởng chỉ huy, chấm điểm thái độ & hoạt động thời gian thực,
                   bảng điểm danh ma trận co giãn và tính năng gộp nhóm tự động chuyển giao chức vụ.
                 </p>
               </div>
 
               {/* Sub-navigation pills */}
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/20 self-start sm:self-center">
+              <div className="flex items-center gap-1 sm:gap-1.5 p-1 rounded-xl bg-black/20 self-stretch sm:self-center overflow-x-auto no-scrollbar">
                 <button
+                  type="button"
                   onClick={() => setCtvSubTab('members')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                     ctvSubTab === 'members'
                       ? 'bg-white text-blue-800 shadow-sm'
                       : 'text-blue-100 hover:bg-white/10'
                   }`}
                 >
-                  <Users className="w-3.5 h-3.5" />
+                  <Users className="w-3.5 h-3.5 shrink-0" />
                   <span>Danh sách thành viên</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setCtvSubTab('attendance')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                     ctvSubTab === 'attendance'
                       ? 'bg-white text-blue-800 shadow-sm'
                       : 'text-blue-100 hover:bg-white/10'
                   }`}
                 >
-                  <CalendarCheck2 className="w-3.5 h-3.5" />
+                  <CalendarCheck2 className="w-3.5 h-3.5 shrink-0" />
                   <span>Điểm danh co giãn</span>
                 </button>
               </div>
@@ -311,58 +313,61 @@ function DashboardContent() {
         {/* WORKSPACE 2: TÌNH NGUYỆN VIÊN (TNV)                   */}
         {/* ==================================================== */}
         {activeTab === 'tnv' && (
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-4 sm:space-y-6 animate-fade-in min-w-0">
             {/* Header Description */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 text-white shadow-md">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-700 text-white shadow-md overflow-hidden">
               <div>
-                <span className="text-xs font-black tracking-wider uppercase bg-white/20 px-2.5 py-1 rounded-md">
+                <span className="text-[10px] sm:text-xs font-black tracking-wider uppercase bg-white/20 px-2.5 py-0.5 sm:py-1 rounded-md">
                   Phân Hệ Quản Lý 2
                 </span>
-                <h2 className="text-xl font-extrabold mt-2 tracking-tight">
+                <h2 className="text-lg sm:text-xl font-extrabold mt-1.5 sm:mt-2 tracking-tight">
                   Quản Lý Đội Ngũ Tình Nguyện Viên (TNV)
                 </h2>
-                <p className="text-xs text-rose-100 max-w-2xl mt-1 leading-relaxed">
+                <p className="text-xs text-rose-100 max-w-2xl mt-1 leading-relaxed hidden sm:block">
                   Cơ cấu 4 nhóm nòng cốt, bảng vinh danh Top 5, thanh tiến độ so sánh % điểm với Top 1,
-                  bảng theo dõi kỷ luật Thẻ Vàng (Cảnh cáo mức 1) & Thẻ Đỏ (Cảnh cáo mức 2) và điểm danh theo tuần/ca trực.
+                  bảng theo dõi kỷ luật Thẻ Vàng & Thẻ Đỏ và điểm danh theo tuần/ca trực.
                 </p>
               </div>
 
               {/* Sub-navigation pills */}
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/20 self-start sm:self-center">
+              <div className="flex items-center gap-1 sm:gap-1.5 p-1 rounded-xl bg-black/20 self-stretch sm:self-center overflow-x-auto no-scrollbar">
                 <button
+                  type="button"
                   onClick={() => setTnvSubTab('members')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                     tnvSubTab === 'members'
                       ? 'bg-white text-rose-800 shadow-sm'
                       : 'text-rose-100 hover:bg-white/10'
                   }`}
                 >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Danh sách & Tiến độ</span>
+                  <Users className="w-3.5 h-3.5 shrink-0" />
+                  <span>Danh sách & Điểm</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setTnvSubTab('attendance')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                     tnvSubTab === 'attendance'
                       ? 'bg-white text-rose-800 shadow-sm'
                       : 'text-rose-100 hover:bg-white/10'
                   }`}
                 >
-                  <CalendarCheck2 className="w-3.5 h-3.5" />
+                  <CalendarCheck2 className="w-3.5 h-3.5 shrink-0" />
                   <span>Điểm danh ca trực</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => setTnvSubTab('discipline')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                     tnvSubTab === 'discipline'
                       ? 'bg-white text-rose-800 shadow-sm'
                       : 'text-rose-100 hover:bg-white/10'
                   }`}
                 >
-                  <ShieldAlert className="w-3.5 h-3.5" />
-                  <span>Bảng kỷ luật ({tnvDiscipline.summary?.total || 0})</span>
+                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                  <span>Kỷ luật ({tnvDiscipline.summary?.total || 0})</span>
                 </button>
               </div>
             </div>
