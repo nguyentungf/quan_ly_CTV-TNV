@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, Download, X, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import { useToast } from './Toast';
-import api from '../../api';
+import { api } from '../../api';
 
 export default function CsvImportModal({
   isOpen,
