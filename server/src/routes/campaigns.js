@@ -463,14 +463,22 @@ router.delete('/:id/registrations/:regId', requireAuth, async (req, res) => {
       }
     }
 
-    // Thu hồi điểm nếu đã được cộng
+    // Thu hồi điểm nếu đã được cộng (Kèm theo log)
     if (reg.points_awarded > 0) {
       if (reg.member_type === 'ctv') {
         await db.run('UPDATE ctv_members SET activity_points = activity_points - ?, total_points = total_points - ? WHERE id = ?',
           [reg.points_awarded, reg.points_awarded, reg.member_id]);
+        await db.run(`
+          INSERT INTO ctv_point_logs (member_id, type, title, points_delta, note)
+          VALUES (?, 'activity', ?, ?, ?)
+        `, [reg.member_id, `Thu hồi điểm hoạt động`, -reg.points_awarded, `Hủy đăng ký hoạt động`]);
       } else {
         await db.run('UPDATE tnv_members SET total_points = total_points - ? WHERE id = ?',
           [reg.points_awarded, reg.member_id]);
+        await db.run(`
+          INSERT INTO tnv_activities (member_id, category, points, note)
+          VALUES (?, ?, ?, ?)
+        `, [reg.member_id, 'Hủy đăng ký', -reg.points_awarded, `Hủy đăng ký hoạt động`]);
       }
     }
 

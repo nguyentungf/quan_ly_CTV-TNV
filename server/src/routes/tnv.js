@@ -12,7 +12,12 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.get('/members', async (req, res) => {
   try {
     const { search, group, warning, status } = req.query;
-    let query = 'SELECT * FROM tnv_members WHERE 1=1';
+    let query = `
+      SELECT m.*,
+        COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) as total_points
+      FROM tnv_members m
+      WHERE 1=1
+    `;
     const params = [];
 
     if (search) {
@@ -200,7 +205,10 @@ router.get('/groups-summary', async (req, res) => {
   try {
     const groups = [];
     for (let g = 1; g <= 4; g++) {
-      const members = await db.all('SELECT * FROM tnv_members WHERE group_num = ?', [g]);
+      const members = await db.all(`
+        SELECT m.*, COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) as total_points
+        FROM tnv_members m WHERE m.group_num = ?
+      `, [g]);
       const leader = members.find(m => m.role === 'Nhóm trưởng');
       const deputy = members.find(m => m.role === 'Nhóm phó');
       const totalPoints = members.reduce((sum, m) => sum + (m.total_points || 0), 0);
@@ -227,9 +235,10 @@ router.get('/groups-summary', async (req, res) => {
 router.get('/top-5', async (req, res) => {
   try {
     const topMembers = await db.all(`
-      SELECT * FROM tnv_members 
-      WHERE status = 'Đang hoạt động' 
-      ORDER BY total_points DESC, mssv ASC 
+      SELECT m.*, COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) as total_points
+      FROM tnv_members m
+      WHERE m.status = 'Đang hoạt động' 
+      ORDER BY total_points DESC, m.mssv ASC 
       LIMIT 5
     `);
 
@@ -250,9 +259,10 @@ router.get('/top-5', async (req, res) => {
 router.get('/discipline', async (req, res) => {
   try {
     const disciplinedMembers = await db.all(`
-      SELECT * FROM tnv_members 
-      WHERE warning_level IN ('canh_cao_1', 'canh_cao_2') 
-      ORDER BY CASE warning_level WHEN 'canh_cao_2' THEN 1 ELSE 2 END, total_points ASC
+      SELECT m.*, COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) as total_points
+      FROM tnv_members m
+      WHERE m.warning_level IN ('canh_cao_1', 'canh_cao_2') 
+      ORDER BY CASE m.warning_level WHEN 'canh_cao_2' THEN 1 ELSE 2 END, total_points ASC
     `);
 
     res.json({ success: true, data: disciplinedMembers });
@@ -521,9 +531,11 @@ router.get('/activities/:memberId', async (req, res) => {
 // Helper: Lấy dữ liệu mảng TNV chuẩn theo hình ảnh mẫu
 async function getExportTnvRows() {
   const activeMembers = await db.all(`
-    SELECT * FROM tnv_members 
-    WHERE status = 'Đang hoạt động' 
-    ORDER BY group_num ASC, CASE role WHEN 'Nhóm trưởng' THEN 1 WHEN 'Nhóm phó' THEN 2 ELSE 3 END, mssv ASC
+    SELECT m.*,
+      COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) as total_points
+    FROM tnv_members m
+    WHERE m.status = 'Đang hoạt động' 
+    ORDER BY m.group_num ASC, CASE m.role WHEN 'Nhóm trưởng' THEN 1 WHEN 'Nhóm phó' THEN 2 ELSE 3 END, m.mssv ASC
   `);
 
   const groupLeaders = {};

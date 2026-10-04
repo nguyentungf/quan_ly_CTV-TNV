@@ -12,7 +12,14 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.get('/members', async (req, res) => {
   try {
     const { search, group, status } = req.query;
-    let query = 'SELECT * FROM ctv_members WHERE 1=1';
+    let query = `
+      SELECT m.*,
+        COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id AND type = 'attitude'), 0) as attitude_points,
+        COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id AND type = 'activity'), 0) as activity_points,
+        COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id), 0) as total_points
+      FROM ctv_members m
+      WHERE 1=1
+    `;
     const params = [];
 
     if (search) {
@@ -182,7 +189,10 @@ router.get('/groups-summary', async (req, res) => {
   try {
     const groups = [];
     for (let g = 1; g <= 8; g++) {
-      const members = await db.all('SELECT * FROM ctv_members WHERE group_num = ?', [g]);
+      const members = await db.all(`
+        SELECT m.*, COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id), 0) as total_points
+        FROM ctv_members m WHERE m.group_num = ?
+      `, [g]);
       const leader = members.find(m => m.role === 'Nhóm trưởng');
       const deputy = members.find(m => m.role === 'Nhóm phó');
       const totalPoints = members.reduce((sum, m) => sum + (m.total_points || 0), 0);
@@ -529,9 +539,13 @@ router.get('/merge-logs', async (req, res) => {
 // Helper: Lấy dữ liệu dạng mảng chuẩn theo hình ảnh mẫu
 async function getExportRows() {
   const activeMembers = await db.all(`
-    SELECT * FROM ctv_members 
-    WHERE status = 'Đang hoạt động' 
-    ORDER BY group_num ASC, CASE role WHEN 'Nhóm trưởng' THEN 1 WHEN 'Nhóm phó' THEN 2 ELSE 3 END, mssv ASC
+    SELECT m.*,
+      COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id AND type = 'attitude'), 0) as attitude_points,
+      COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id AND type = 'activity'), 0) as activity_points,
+      COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id), 0) as total_points
+    FROM ctv_members m
+    WHERE m.status = 'Đang hoạt động' 
+    ORDER BY m.group_num ASC, CASE m.role WHEN 'Nhóm trưởng' THEN 1 WHEN 'Nhóm phó' THEN 2 ELSE 3 END, m.mssv ASC
   `);
 
   const groupLeaders = {};
