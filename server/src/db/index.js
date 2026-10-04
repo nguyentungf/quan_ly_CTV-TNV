@@ -33,10 +33,10 @@ if (isPostgres) {
   });
 
   pool.on('error', (err) => {
-    console.error('⚠️ Lỗi bất ngờ từ PostgreSQL Pool:', err.message);
+    console.error('Lỗi bất ngờ từ PostgreSQL Pool:', err.message);
   });
 } else {
-  console.log('💾 Sử dụng Cơ sở dữ liệu SQLite cục bộ (Local SQLite)...');
+  console.log('Sử dụng Cơ sở dữ liệu SQLite cục bộ (Local SQLite)...');
   const dataDir = path.resolve(__dirname, '../../data');
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
