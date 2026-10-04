@@ -60,7 +60,8 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
             const nextAtt = { ...row.attendance, [eventId]: newStatus };
             let attendedCount = 0;
             for (const ev of prev.events) {
-              if (nextAtt[ev.id] === 'co_mat') attendedCount++;
+              const st = nextAtt[ev.id];
+              if (st === 'tham_gia' || st === 'co_mat') attendedCount++;
             }
             const totalSessions = prev.events.length;
             const percent = totalSessions > 0 ? Math.round((attendedCount / totalSessions) * 100) : 0;
@@ -136,6 +137,13 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* Status legend */}
+          <div className="hidden lg:flex items-center gap-2 text-[11px] font-medium text-slate-600 bg-slate-50 p-1.5 px-3 rounded-xl border border-slate-200">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span>Tham gia</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>Có phép</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500"></span>Không phép</span>
+          </div>
+
           {isAdmin && (
             <button
               onClick={handleInit19Weeks}
@@ -234,7 +242,10 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
 
                     {/* Dynamic Event Cells */}
                     {data.events.map((ev) => {
-                      const curStatus = row.attendance[ev.id] || 'vang';
+                      const rawStatus = row.attendance[ev.id];
+                      const curStatus = rawStatus === 'co_mat' ? 'tham_gia'
+                        : (rawStatus === 'vang_khong_phep' || rawStatus === 'vang') ? 'khong_phep'
+                        : (rawStatus || 'khong_phep');
                       return (
                         <td key={ev.id} className="p-2.5 text-center border-r border-slate-100">
                           {canEdit ? (
@@ -242,23 +253,32 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
                               value={curStatus}
                               onChange={(e) => handleStatusChange(m.id, ev.id, e.target.value)}
                               className={`w-full text-center px-2 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer focus:ring-2 focus:ring-rose-400 focus:outline-none ${
-                                curStatus === 'co_mat'
+                                curStatus === 'tham_gia'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                                  : curStatus === 'co_phep'
+                                  ? 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
                                   : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
                               }`}
                             >
-                              <option value="co_mat">✓ Có mặt</option>
-                              <option value="vang">✕ Vắng mặt</option>
+                              <option value="tham_gia">✓ Tham gia</option>
+                              <option value="co_phep">☕ Có phép</option>
+                              <option value="khong_phep">✕ Không phép</option>
                             </select>
                           ) : (
                             <span
                               className={`inline-block w-full py-1 px-2 rounded-lg text-xs font-bold border text-center ${
-                                curStatus === 'co_mat'
+                                curStatus === 'tham_gia'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : curStatus === 'co_phep'
+                                  ? 'bg-blue-50 text-blue-800 border-blue-200'
                                   : 'bg-rose-50 text-rose-800 border-rose-200'
                               }`}
                             >
-                              {curStatus === 'co_mat' ? '✓ Có mặt' : '✕ Vắng'}
+                              {curStatus === 'tham_gia'
+                                ? 'Tham gia'
+                                : curStatus === 'co_phep'
+                                ? 'Có phép'
+                                : 'Không phép'}
                             </span>
                           )}
                         </td>

@@ -45,14 +45,16 @@ router.get('/', async (req, res) => {
 // 2. Thêm hoạt động mới
 router.post('/', requireAdmin, async (req, res) => {
   try {
-    const { name, description, location, eventDate, points, targetType, status } = req.body;
+    const { name, description, location, eventDate, points, targetType, status, shifts } = req.body;
     if (!name || !eventDate) {
       return res.status(400).json({ success: false, message: 'Tên hoạt động và ngày tổ chức là bắt buộc' });
     }
 
+    const shiftsStr = Array.isArray(shifts) ? JSON.stringify(shifts) : (typeof shifts === 'string' ? shifts : '[]');
+
     const newCamp = await db.get(`
-      INSERT INTO campaigns (name, description, location, event_date, points, target_type, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO campaigns (name, description, location, event_date, points, target_type, status, shifts)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *
     `, [
       name.trim(),
@@ -61,7 +63,8 @@ router.post('/', requireAdmin, async (req, res) => {
       eventDate.trim(),
       points !== undefined ? Number(points) : 10,
       targetType || 'all',
-      status || 'dang_mo_dang_ky'
+      status || 'dang_mo_dang_ky',
+      shiftsStr
     ]);
 
     res.json({ success: true, message: 'Tạo hoạt động thành công', data: newCamp });
@@ -74,11 +77,13 @@ router.post('/', requireAdmin, async (req, res) => {
 router.put('/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, location, eventDate, points, targetType, status } = req.body;
+    const { name, description, location, eventDate, points, targetType, status, shifts } = req.body;
+
+    const shiftsStr = Array.isArray(shifts) ? JSON.stringify(shifts) : (typeof shifts === 'string' ? shifts : '[]');
 
     await db.run(`
       UPDATE campaigns 
-      SET name = ?, description = ?, location = ?, event_date = ?, points = ?, target_type = ?, status = ?
+      SET name = ?, description = ?, location = ?, event_date = ?, points = ?, target_type = ?, status = ?, shifts = ?
       WHERE id = ?
     `, [
       name?.trim(),
@@ -88,6 +93,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
       points !== undefined ? Number(points) : 10,
       targetType,
       status,
+      shiftsStr,
       Number(id)
     ]);
 
@@ -122,6 +128,8 @@ router.get('/:id/registrations', async (req, res) => {
         r.member_type,
         r.member_id,
         r.group_num,
+        r.shift_id,
+        r.shift_name,
         r.registered_by,
         r.attendance_status,
         r.points_awarded,
@@ -170,7 +178,7 @@ router.get('/:id/registrations', async (req, res) => {
       params.push(memberType);
     }
 
-    query += ' ORDER BY r.group_num ASC, r.member_type ASC, full_name ASC';
+    query += ' ORDER BY r.group_num ASC, r.shift_name ASC, r.member_type ASC, full_name ASC';
     const rows = await db.all(query, params);
 
     res.json({ success: true, data: rows });
@@ -183,7 +191,7 @@ router.get('/:id/registrations', async (req, res) => {
 router.post('/:id/register', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { memberType, memberId, registeredBy } = req.body;
+    const { memberType, memberId, shiftId, shiftName, registeredBy } = req.body;
 
     if (!memberType || !memberId) {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin người đăng ký' });
@@ -218,10 +226,10 @@ router.post('/:id/register', requireAuth, async (req, res) => {
     }
 
     const reg = await db.get(`
-      INSERT INTO campaign_registrations (campaign_id, member_type, member_id, group_num, registered_by, attendance_status, points_awarded)
-      VALUES (?, ?, ?, ?, ?, 'chua_diem_danh', 0)
+      INSERT INTO campaign_registrations (campaign_id, member_type, member_id, group_num, shift_id, shift_name, registered_by, attendance_status, points_awarded)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'chua_diem_danh', 0)
       RETURNING *
-    `, [Number(id), memberType, Number(memberId), groupNum, registeredBy || req.user.displayName || 'Tự đăng ký']);
+    `, [Number(id), memberType, Number(memberId), groupNum, shiftId || '', shiftName || '', registeredBy || req.user.displayName || 'Tự đăng ký']);
 
     res.json({ success: true, message: 'Đăng ký thành công', data: reg });
   } catch (error) {
@@ -229,11 +237,11 @@ router.post('/:id/register', requireAuth, async (req, res) => {
   }
 });
 
-// 7. NHÓM TRƯỞNG ĐĂNG KÝ HÀNG LOẠT CHO CẢ NHÓM (1 Cú Click)
+// 7. NHÓM TRƯỞNG ĐĂNG KÝ CHO THÀNH VIÊN TRONG NHÓM (Linh hoạt chọn từng thành viên hoặc cả nhóm, hỗ trợ phân kíp)
 router.post('/:id/register-group', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { memberType, groupNum, registeredBy } = req.body;
+    const { memberType, groupNum, registeredBy, memberIds, selectedMembers, shiftId, shiftName } = req.body;
 
     const campId = Number(id);
     const gNum = Number(groupNum);
@@ -253,30 +261,70 @@ router.post('/:id/register-group', requireAuth, async (req, res) => {
     }
 
     // Lấy danh sách thành viên đang hoạt động của nhóm đó
-    let members = [];
+    let allGroupMembers = [];
     if (memberType === 'ctv') {
-      members = await db.all("SELECT id, full_name FROM ctv_members WHERE group_num = ? AND status = 'Đang hoạt động'", [gNum]);
+      allGroupMembers = await db.all("SELECT id, full_name FROM ctv_members WHERE group_num = ? AND status = 'Đang hoạt động'", [gNum]);
     } else {
-      members = await db.all("SELECT id, full_name FROM tnv_members WHERE group_num = ? AND status = 'Đang hoạt động'", [gNum]);
+      allGroupMembers = await db.all("SELECT id, full_name FROM tnv_members WHERE group_num = ? AND status = 'Đang hoạt động'", [gNum]);
     }
 
-    if (members.length === 0) {
+    if (allGroupMembers.length === 0) {
       return res.status(400).json({ success: false, message: `Không có thành viên nào đang hoạt động trong Nhóm ${gNum}!` });
+    }
+
+    // Xử lý danh sách thành viên được chọn
+    let membersToRegister = [];
+    const shiftInfoMap = new Map();
+
+    if (Array.isArray(selectedMembers) && selectedMembers.length > 0) {
+      // Dạng chi tiết từng thành viên kèm kíp: [{ memberId, shiftId, shiftName }]
+      const selectedIdSet = new Set(selectedMembers.map(item => Number(item.memberId)));
+      membersToRegister = allGroupMembers.filter(m => selectedIdSet.has(m.id));
+      for (const sm of selectedMembers) {
+        shiftInfoMap.set(Number(sm.memberId), {
+          shiftId: sm.shiftId || '',
+          shiftName: sm.shiftName || ''
+        });
+      }
+    } else if (Array.isArray(memberIds) && memberIds.length > 0) {
+      // Dạng mảng ID: [id1, id2, ...]
+      const selectedIdSet = new Set(memberIds.map(Number));
+      membersToRegister = allGroupMembers.filter(m => selectedIdSet.has(m.id));
+    } else {
+      // Nếu không gửi danh sách chọn: Mặc định đăng ký tất cả thành viên trong nhóm
+      membersToRegister = allGroupMembers;
+    }
+
+    if (membersToRegister.length === 0) {
+      return res.status(400).json({ success: false, message: 'Vui lòng chọn ít nhất một thành viên trong nhóm để đăng ký!' });
     }
 
     let newlyRegistered = 0;
     await db.transaction(async (txDb) => {
-      for (const m of members) {
+      for (const m of membersToRegister) {
         const exist = await txDb.get(`
           SELECT id FROM campaign_registrations 
           WHERE campaign_id = ? AND member_type = ? AND member_id = ?
         `, [campId, memberType, m.id]);
 
         if (!exist) {
+          const shiftDetail = shiftInfoMap.get(m.id) || {
+            shiftId: shiftId || '',
+            shiftName: shiftName || ''
+          };
+
           await txDb.run(`
-            INSERT INTO campaign_registrations (campaign_id, member_type, member_id, group_num, registered_by, attendance_status, points_awarded)
-            VALUES (?, ?, ?, ?, ?, 'chua_diem_danh', 0)
-          `, [campId, memberType, m.id, gNum, registeredBy || req.user.displayName || `Nhóm trưởng Nhóm ${gNum}`]);
+            INSERT INTO campaign_registrations (campaign_id, member_type, member_id, group_num, shift_id, shift_name, registered_by, attendance_status, points_awarded)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'chua_diem_danh', 0)
+          `, [
+            campId,
+            memberType,
+            m.id,
+            gNum,
+            shiftDetail.shiftId,
+            shiftDetail.shiftName,
+            registeredBy || req.user.displayName || `Nhóm trưởng Nhóm ${gNum}`
+          ]);
           newlyRegistered++;
         }
       }
@@ -286,7 +334,8 @@ router.post('/:id/register-group', requireAuth, async (req, res) => {
       success: true,
       message: `Đã đăng ký thành công cho ${newlyRegistered} thành viên Nhóm ${gNum} tham gia hoạt động!`,
       newlyRegistered,
-      totalGroupMembers: members.length
+      totalSelected: membersToRegister.length,
+      totalGroupMembers: allGroupMembers.length
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi đăng ký theo nhóm', error: error.message });
@@ -432,12 +481,19 @@ router.delete('/:id/registrations/:regId', requireAuth, async (req, res) => {
   }
 });
 
-// 10. Xuất Excel danh sách đăng ký và điểm danh hoạt động
+// 10. Xuất Excel danh sách đăng ký và điểm danh hoạt động (Hỗ trợ phân Kíp / Shifts)
 router.get('/:id/export-xlsx', async (req, res) => {
   try {
     const { id } = req.params;
     const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
     if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    let campaignShifts = [];
+    try {
+      campaignShifts = JSON.parse(camp.shifts || '[]');
+    } catch (e) {
+      campaignShifts = [];
+    }
 
     const regs = await db.all(`
       SELECT 
@@ -453,15 +509,16 @@ router.get('/:id/export-xlsx', async (req, res) => {
       LEFT JOIN ctv_members c ON r.member_type = 'ctv' AND r.member_id = c.id
       LEFT JOIN tnv_members t ON r.member_type = 'tnv' AND r.member_id = t.id
       WHERE r.campaign_id = ?
-      ORDER BY r.group_num ASC, r.member_type ASC, full_name ASC
+      ORDER BY r.shift_name ASC, r.group_num ASC, r.member_type ASC, full_name ASC
     `, [Number(id)]);
 
-    const rows = regs.map((r, idx) => ({
+    const formatRow = (r, idx) => ({
       'STT': idx + 1,
+      'Kíp (Ca)': r.shift_name || 'Không phân kíp',
       'Đối tượng': r.member_type === 'ctv' ? 'Cộng Tác Viên' : 'Tình Nguyện Viên',
       'Nhóm': `Nhóm ${r.group_num}`,
-      'Họ và tên': r.full_name,
-      'MSSV': r.mssv,
+      'Họ và tên': r.full_name || '',
+      'MSSV': r.mssv || '',
       'Giới tính': r.gender || 'Nam',
       'Lớp': r.class_name || '',
       'Số điện thoại': r.phone || '',
@@ -470,11 +527,63 @@ router.get('/:id/export-xlsx', async (req, res) => {
       'Người đăng ký': r.registered_by || 'Nhóm trưởng',
       'Trạng thái điểm danh': r.attendance_status === 'co_mat' ? 'Có mặt' : (r.attendance_status === 'vang' ? 'Vắng mặt' : 'Chưa điểm danh'),
       'Điểm cộng': r.points_awarded
-    }));
+    });
 
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Diem_Danh_Hoat_Dong');
+
+    // Thu thập các kíp có trong chiến dịch hoặc có thành viên đăng ký
+    const shiftKeys = new Set();
+    if (Array.isArray(campaignShifts)) {
+      campaignShifts.forEach(s => {
+        if (s.name) shiftKeys.add(s.name.trim());
+      });
+    }
+    regs.forEach(r => {
+      if (r.shift_name && r.shift_name.trim()) {
+        shiftKeys.add(r.shift_name.trim());
+      }
+    });
+
+    // Nếu có phân kíp (từ 1 kíp trở lên)
+    if (shiftKeys.size > 0) {
+      // 1. Tạo sheet tổng hợp trước
+      const allRows = regs.map((r, idx) => formatRow(r, idx));
+      const wsAll = XLSX.utils.json_to_sheet(allRows);
+      XLSX.utils.book_append_sheet(wb, wsAll, 'Toan_Bo_Danh_Sach');
+
+      // 2. Tạo từng sheet riêng biệt cho từng Kíp
+      let sheetIndex = 1;
+      for (const shiftName of shiftKeys) {
+        const shiftRegs = regs.filter(r => (r.shift_name || '').trim() === shiftName);
+        const shiftRows = shiftRegs.map((r, idx) => formatRow(r, idx));
+        const wsShift = XLSX.utils.json_to_sheet(shiftRows.length > 0 ? shiftRows : [{
+          'Thông báo': `Chưa có thành viên nào đăng ký ${shiftName}`
+        }]);
+
+        // Làm sạch tên sheet (Excel giới hạn 31 ký tự và cấm \ / ? * [ ] : )
+        let safeSheetName = shiftName.replace(/[:\\/?*\[\]]/g, '_').substring(0, 31);
+        if (!safeSheetName) safeSheetName = `Kip_${sheetIndex++}`;
+        
+        XLSX.utils.book_append_sheet(wb, wsShift, safeSheetName);
+      }
+
+      // Nếu có thành viên chưa phân kíp
+      const unassignedRegs = regs.filter(r => !r.shift_name || !r.shift_name.trim());
+      if (unassignedRegs.length > 0) {
+        const unassignedRows = unassignedRegs.map((r, idx) => formatRow(r, idx));
+        const wsUnassigned = XLSX.utils.json_to_sheet(unassignedRows);
+        XLSX.utils.book_append_sheet(wb, wsUnassigned, 'Chua_Phan_Kip');
+      }
+    } else {
+      // Hoạt động thông thường không có kíp
+      const rows = regs.map((r, idx) => {
+        const row = formatRow(r, idx);
+        delete row['Kíp (Ca)'];
+        return row;
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Diem_Danh_Hoat_Dong');
+    }
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

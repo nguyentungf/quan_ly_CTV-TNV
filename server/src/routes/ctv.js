@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { requireAuth, requireAdmin, checkGroupPermission } from '../middleware/auth.js';
+import { syncCtvWeeklyAttendancePoints } from '../utils/attendancePoints.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -235,12 +236,12 @@ router.post('/init-19-weeks', requireAdmin, async (req, res) => {
         `, [name, eventDate]);
         added.push(newEv);
 
-        // Mặc định tạo trạng thái có mặt
+        // Mặc định tạo trạng thái tham gia
         const members = await db.all('SELECT id FROM ctv_members');
         for (const m of members) {
           await db.run(`
             INSERT INTO ctv_attendance (member_id, event_id, status)
-            VALUES (?, ?, 'co_mat')
+            VALUES (?, ?, 'tham_gia')
             ON CONFLICT (member_id, event_id) DO NOTHING
           `, [m.id, newEv.id]);
         }
@@ -270,7 +271,7 @@ router.post('/events', requireAdmin, async (req, res) => {
     for (const m of members) {
       await db.run(`
         INSERT INTO ctv_attendance (member_id, event_id, status)
-        VALUES (?, ?, 'co_mat')
+        VALUES (?, ?, 'tham_gia')
         ON CONFLICT (member_id, event_id) DO NOTHING
       `, [m.id, newEvent.id]);
     }
@@ -287,13 +288,20 @@ router.delete('/events/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
     await db.run('DELETE FROM ctv_attendance WHERE event_id = ?', [Number(id)]);
     await db.run('DELETE FROM ctv_events WHERE id = ?', [Number(id)]);
+
+    // Đồng bộ lại điểm chuyên cần cho các thành viên sau khi xóa tuần
+    const allMembers = await db.all('SELECT id FROM ctv_members');
+    for (const m of allMembers) {
+      await syncCtvWeeklyAttendancePoints(m.id, db);
+    }
+
     res.json({ success: true, message: 'Đã xóa ngày điểm danh' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi xóa ngày điểm danh', error: error.message });
   }
 });
 
-// 11. Ma trận điểm danh co giãn (Elastic Attendance Matrix)
+// 11. Ma trận điểm danh co giãn (Elastic Attendance Matrix) - Chuẩn hóa 3 trạng thái
 router.get('/attendance-matrix', async (req, res) => {
   try {
     const { group } = req.query;
@@ -316,7 +324,15 @@ router.get('/attendance-matrix', async (req, res) => {
       attendanceMap[`${mId}_${eId}`] = r.status;
     }
 
-    const weightMap = { co_mat: 100, di_muon: 50, co_phep: 0, vang_khong_phep: -50 };
+    // Chuẩn hóa 3 trạng thái: tham_gia (100%), co_phep (50%), khong_phep (0%)
+    const weightMap = {
+      tham_gia: 100,
+      co_mat: 100,
+      co_phep: 50,
+      khong_phep: 0,
+      vang_khong_phep: 0,
+      di_muon: 50
+    };
 
     const matrix = members.map(m => {
       const records = {};
@@ -324,7 +340,11 @@ router.get('/attendance-matrix', async (req, res) => {
       let recordedCount = 0;
 
       for (const e of events) {
-        const status = attendanceMap[`${m.id}_${e.id}`] || 'vang_khong_phep';
+        let status = attendanceMap[`${m.id}_${e.id}`] || 'khong_phep';
+        // Chuẩn hóa sang 3 trạng thái chuẩn
+        if (status === 'co_mat') status = 'tham_gia';
+        else if (status === 'vang_khong_phep' || status === 'vang') status = 'khong_phep';
+
         records[e.id] = status;
         totalWeightedScore += (weightMap[status] !== undefined ? weightMap[status] : 0);
         recordedCount++;
@@ -355,7 +375,7 @@ router.get('/attendance-matrix', async (req, res) => {
   }
 });
 
-// 12. Cập nhật ô điểm danh
+// 12. Cập nhật ô điểm danh (Quy chuẩn 3 trạng thái & Tự động tính điểm chuyên cần theo tuần)
 router.post('/attendance', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { memberId, eventId, status } = req.body;
@@ -363,13 +383,28 @@ router.post('/attendance', checkGroupPermission('ctv'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin điểm danh' });
     }
 
+    // Chuẩn hóa trạng thái về 3 giá trị duy nhất: 'tham_gia', 'co_phep', 'khong_phep'
+    let normStatus = status;
+    if (status === 'co_mat') normStatus = 'tham_gia';
+    else if (status === 'vang_khong_phep' || status === 'vang') normStatus = 'khong_phep';
+    else if (status !== 'tham_gia' && status !== 'co_phep' && status !== 'khong_phep') {
+      normStatus = 'khong_phep';
+    }
+
     await db.run(`
       INSERT INTO ctv_attendance (member_id, event_id, status)
       VALUES (?, ?, ?)
       ON CONFLICT(member_id, event_id) DO UPDATE SET status = EXCLUDED.status
-    `, [Number(memberId), Number(eventId), status]);
+    `, [Number(memberId), Number(eventId), normStatus]);
 
-    res.json({ success: true, message: 'Cập nhật điểm danh thành công' });
+    // Tự động tính toán và đồng bộ logic thưởng/phạt điểm chuyên cần theo tuần
+    await syncCtvWeeklyAttendancePoints(memberId, db);
+
+    res.json({
+      success: true,
+      message: 'Cập nhật điểm danh và đồng bộ chuyên cần thành công',
+      status: normStatus
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi cập nhật điểm danh', error: error.message });
   }

@@ -157,9 +157,25 @@ export const db = {
         client.release();
       }
     } else {
-      // Đối với SQLite, chạy tuần tự với transaction
-      const tx = sqlite.transaction((innerCb) => innerCb());
-      return tx(() => callback(db));
+      // Đối với SQLite, hỗ trợ async callback an toàn với BEGIN / COMMIT / ROLLBACK
+      sqlite.exec('BEGIN TRANSACTION');
+      try {
+        const result = await callback(db);
+        sqlite.exec('COMMIT');
+        return result;
+      } catch (err) {
+        sqlite.exec('ROLLBACK');
+        throw err;
+      }
+    }
+  },
+
+  close() {
+    if (sqlite) {
+      try { sqlite.close(); } catch (e) {}
+    }
+    if (pool) {
+      try { pool.end(); } catch (e) {}
     }
   }
 };
@@ -197,7 +213,7 @@ export async function initSchema() {
         id SERIAL PRIMARY KEY,
         member_id INTEGER NOT NULL REFERENCES ctv_members(id) ON DELETE CASCADE,
         event_id INTEGER NOT NULL REFERENCES ctv_events(id) ON DELETE CASCADE,
-        status VARCHAR(50) NOT NULL DEFAULT 'co_mat',
+        status VARCHAR(50) NOT NULL DEFAULT 'tham_gia',
         UNIQUE(member_id, event_id)
       );
 
@@ -249,7 +265,7 @@ export async function initSchema() {
         id SERIAL PRIMARY KEY,
         member_id INTEGER NOT NULL REFERENCES tnv_members(id) ON DELETE CASCADE,
         event_id INTEGER NOT NULL REFERENCES tnv_events(id) ON DELETE CASCADE,
-        status VARCHAR(50) NOT NULL DEFAULT 'co_mat',
+        status VARCHAR(50) NOT NULL DEFAULT 'tham_gia',
         UNIQUE(member_id, event_id)
       );
 
@@ -271,6 +287,7 @@ export async function initSchema() {
         points INTEGER NOT NULL DEFAULT 10,
         target_type VARCHAR(50) NOT NULL DEFAULT 'all',
         status VARCHAR(50) NOT NULL DEFAULT 'dang_mo_dang_ky',
+        shifts TEXT DEFAULT '[]',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -280,6 +297,8 @@ export async function initSchema() {
         member_type VARCHAR(20) NOT NULL,
         member_id INTEGER NOT NULL,
         group_num INTEGER NOT NULL,
+        shift_id VARCHAR(100) DEFAULT '',
+        shift_name VARCHAR(255) DEFAULT '',
         registered_by VARCHAR(255) DEFAULT 'Nhóm trưởng',
         attendance_status VARCHAR(50) NOT NULL DEFAULT 'chua_diem_danh',
         points_awarded INTEGER NOT NULL DEFAULT 0,
@@ -298,6 +317,13 @@ export async function initSchema() {
         UNIQUE(role, target_type, group_num)
       );
     `);
+    try { await pool.query(`ALTER TABLE ctv_members ADD COLUMN IF NOT EXISTS gender VARCHAR(10) DEFAULT 'Nam'`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE ctv_members ADD COLUMN IF NOT EXISTS class_name VARCHAR(100) DEFAULT ''`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE tnv_members ADD COLUMN IF NOT EXISTS gender VARCHAR(10) DEFAULT 'Nam'`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE tnv_members ADD COLUMN IF NOT EXISTS class_name VARCHAR(100) DEFAULT ''`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS shifts TEXT DEFAULT '[]'`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS shift_id VARCHAR(100) DEFAULT ''`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS shift_name VARCHAR(255) DEFAULT ''`); } catch (e) {}
     console.log('✅ Khởi tạo cấu trúc bảng PostgreSQL hoàn tất!');
   } else {
     sqlite.exec(`
@@ -329,7 +355,7 @@ export async function initSchema() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         member_id INTEGER NOT NULL REFERENCES ctv_members(id) ON DELETE CASCADE,
         event_id INTEGER NOT NULL REFERENCES ctv_events(id) ON DELETE CASCADE,
-        status TEXT NOT NULL DEFAULT 'co_mat',
+        status TEXT NOT NULL DEFAULT 'tham_gia',
         UNIQUE(member_id, event_id)
       );
 
@@ -381,7 +407,7 @@ export async function initSchema() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         member_id INTEGER NOT NULL REFERENCES tnv_members(id) ON DELETE CASCADE,
         event_id INTEGER NOT NULL REFERENCES tnv_events(id) ON DELETE CASCADE,
-        status TEXT NOT NULL DEFAULT 'co_mat',
+        status TEXT NOT NULL DEFAULT 'tham_gia',
         UNIQUE(member_id, event_id)
       );
 
@@ -403,6 +429,7 @@ export async function initSchema() {
         points INTEGER NOT NULL DEFAULT 10,
         target_type TEXT NOT NULL DEFAULT 'all',
         status TEXT NOT NULL DEFAULT 'dang_mo_dang_ky',
+        shifts TEXT DEFAULT '[]',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -412,6 +439,8 @@ export async function initSchema() {
         member_type TEXT NOT NULL,
         member_id INTEGER NOT NULL,
         group_num INTEGER NOT NULL,
+        shift_id TEXT DEFAULT '',
+        shift_name TEXT DEFAULT '',
         registered_by TEXT DEFAULT 'Nhóm trưởng',
         attendance_status TEXT NOT NULL DEFAULT 'chua_diem_danh',
         points_awarded INTEGER NOT NULL DEFAULT 0,
@@ -436,6 +465,9 @@ export async function initSchema() {
     try { sqlite.exec(`ALTER TABLE ctv_members ADD COLUMN class_name TEXT DEFAULT ''`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE tnv_members ADD COLUMN gender TEXT DEFAULT 'Nam'`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE tnv_members ADD COLUMN class_name TEXT DEFAULT ''`); } catch (e) {}
+    try { sqlite.exec(`ALTER TABLE campaigns ADD COLUMN shifts TEXT DEFAULT '[]'`); } catch (e) {}
+    try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN shift_id TEXT DEFAULT ''`); } catch (e) {}
+    try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN shift_name TEXT DEFAULT ''`); } catch (e) {}
   }
 
   // Tự động kiểm tra và tạo tài khoản xác thực mặc định nếu chưa có

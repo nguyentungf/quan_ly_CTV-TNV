@@ -33,7 +33,7 @@ export const ctvAttendance = sqliteTable('ctv_attendance', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   memberId: integer('member_id').notNull().references(() => ctvMembers.id, { onDelete: 'cascade' }),
   eventId: integer('event_id').notNull().references(() => ctvEvents.id, { onDelete: 'cascade' }),
-  status: text('status').notNull().default('co_mat'), // 'co_mat' (100%), 'di_muon' (50%), 'co_phep' (0%), 'vang_khong_phep' (-50%)
+  status: text('status').notNull().default('tham_gia'), // 'tham_gia' (Tham gia), 'co_phep' (Có phép), 'khong_phep' (Không phép)
 });
 
 export const ctvPointLogs = sqliteTable('ctv_point_logs', {
@@ -88,7 +88,7 @@ export const tnvAttendance = sqliteTable('tnv_attendance', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   memberId: integer('member_id').notNull().references(() => tnvMembers.id, { onDelete: 'cascade' }),
   eventId: integer('event_id').notNull().references(() => tnvEvents.id, { onDelete: 'cascade' }),
-  status: text('status').notNull().default('co_mat'), // 'co_mat' | 'vang'
+  status: text('status').notNull().default('tham_gia'), // 'tham_gia' | 'co_phep' | 'khong_phep'
 });
 
 export const tnvActivities = sqliteTable('tnv_activities', {
@@ -113,6 +113,7 @@ export const campaigns = sqliteTable('campaigns', {
   points: integer('points').notNull().default(10), // Điểm cộng khi tham gia
   targetType: text('target_type').notNull().default('all'), // 'all' | 'ctv' | 'tnv'
   status: text('status').notNull().default('dang_mo_dang_ky'), // 'dang_mo_dang_ky' | 'dang_tien_hanh' | 'da_hoan_thanh'
+  shifts: text('shifts').default('[]'), // Danh sách Kíp (JSON array: [{ id, name, time }])
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -122,6 +123,8 @@ export const campaignRegistrations = sqliteTable('campaign_registrations', {
   memberType: text('member_type').notNull(), // 'ctv' | 'tnv'
   memberId: integer('member_id').notNull(),
   groupNum: integer('group_num').notNull(),
+  shiftId: text('shift_id').default(''), // ID của kíp đã chọn (ví dụ: 'k1')
+  shiftName: text('shift_name').default(''), // Tên kíp (ví dụ: 'Kíp 1 (07:00 - 11:30)')
   registeredBy: text('registered_by').default('Nhóm trưởng'),
   attendanceStatus: text('attendance_status').notNull().default('chua_diem_danh'), // 'chua_diem_danh' | 'co_mat' | 'vang'
   pointsAwarded: integer('points_awarded').notNull().default(0), // Điểm đã cộng

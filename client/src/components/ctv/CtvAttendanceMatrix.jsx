@@ -59,11 +59,12 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
           if (row.member.id === memberId) {
             const nextAtt = { ...row.attendance, [eventId]: newStatus };
             // Recompute attendance rate
-            const weightMap = { co_mat: 100, di_muon: 50, co_phep: 0, vang_khong_phep: -50 };
+            const weightMap = { tham_gia: 100, co_mat: 100, co_phep: 50, khong_phep: 0, vang_khong_phep: 0 };
             let totalWeight = 0;
             let count = 0;
             for (const ev of prev.events) {
-              const st = nextAtt[ev.id] || 'vang_khong_phep';
+              const rawSt = nextAtt[ev.id];
+              const st = rawSt === 'co_mat' ? 'tham_gia' : (rawSt === 'vang_khong_phep' || rawSt === 'vang') ? 'khong_phep' : (rawSt || 'khong_phep');
               totalWeight += weightMap[st] !== undefined ? weightMap[st] : 0;
               count++;
             }
@@ -118,16 +119,16 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
 
   const getStatusBadge = (status) => {
     switch (status) {
+      case 'tham_gia':
       case 'co_mat':
-        return { text: 'Có mặt (100%)', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-      case 'di_muon':
-        return { text: 'Đi muộn (50%)', color: 'bg-amber-50 text-amber-700 border-amber-200' };
+        return { text: 'Tham gia', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
       case 'co_phep':
-        return { text: 'Có phép (0%)', color: 'bg-blue-50 text-blue-700 border-blue-200' };
+        return { text: 'Có phép', color: 'bg-blue-50 text-blue-700 border-blue-200' };
+      case 'khong_phep':
       case 'vang_khong_phep':
-        return { text: 'Vắng (-50%)', color: 'bg-rose-50 text-rose-700 border-rose-200' };
+      case 'vang':
       default:
-        return { text: 'Chưa điểm danh', color: 'bg-slate-100 text-slate-500 border-slate-200' };
+        return { text: 'Không phép', color: 'bg-rose-50 text-rose-700 border-rose-200' };
     }
   };
 
@@ -152,10 +153,9 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Status legend */}
           <div className="hidden lg:flex items-center gap-2 text-[11px] font-medium text-slate-600 bg-slate-50 p-1.5 px-3 rounded-xl border border-slate-200">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span>Có mặt (100%)</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"></span>Đi muộn (50%)</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>Có phép (0%)</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500"></span>Vắng (-50%)</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span>Tham gia</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>Có phép</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500"></span>Không phép</span>
           </div>
 
           {isAdmin && (
@@ -264,7 +264,10 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
 
                     {/* Dynamic Event Cells */}
                     {data.events.map((ev) => {
-                      const curStatus = row.attendance[ev.id] || 'vang_khong_phep';
+                      const rawStatus = row.attendance[ev.id];
+                      const curStatus = rawStatus === 'co_mat' ? 'tham_gia'
+                        : (rawStatus === 'vang_khong_phep' || rawStatus === 'vang') ? 'khong_phep'
+                        : (rawStatus || 'khong_phep');
                       return (
                         <td key={ev.id} className="p-2.5 text-center border-r border-slate-100">
                           {canEdit ? (
@@ -272,39 +275,32 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
                               value={curStatus}
                               onChange={(e) => handleStatusChange(m.id, ev.id, e.target.value)}
                               className={`w-full text-center px-2 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer focus:ring-2 focus:ring-blue-400 focus:outline-none ${
-                                curStatus === 'co_mat'
+                                curStatus === 'tham_gia'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                                  : curStatus === 'di_muon'
-                                  ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
                                   : curStatus === 'co_phep'
                                   ? 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
                                   : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
                               }`}
                             >
-                              <option value="co_mat">Có mặt (100%)</option>
-                              <option value="di_muon">Đi muộn (50%)</option>
-                              <option value="co_phep">Có phép (0%)</option>
-                              <option value="vang_khong_phep">Vắng (-50%)</option>
+                              <option value="tham_gia">✓ Tham gia</option>
+                              <option value="co_phep">☕ Có phép</option>
+                              <option value="khong_phep">✕ Không phép</option>
                             </select>
                           ) : (
                             <span
                               className={`inline-block w-full py-1 px-1.5 rounded-lg text-[11px] font-bold border text-center ${
-                                curStatus === 'co_mat'
+                                curStatus === 'tham_gia'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : curStatus === 'di_muon'
-                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
                                   : curStatus === 'co_phep'
                                   ? 'bg-blue-50 text-blue-800 border-blue-200'
                                   : 'bg-rose-50 text-rose-800 border-rose-200'
                               }`}
                             >
-                              {curStatus === 'co_mat'
-                                ? 'Có mặt'
-                                : curStatus === 'di_muon'
-                                ? 'Đi muộn'
+                              {curStatus === 'tham_gia'
+                                ? 'Tham gia'
                                 : curStatus === 'co_phep'
                                 ? 'Có phép'
-                                : 'Vắng'}
+                                : 'Không phép'}
                             </span>
                           )}
                         </td>

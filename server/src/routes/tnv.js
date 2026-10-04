@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { requireAuth, requireAdmin, checkGroupPermission } from '../middleware/auth.js';
+import { syncTnvWeeklyAttendancePoints } from '../utils/attendancePoints.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -317,7 +318,7 @@ router.post('/init-19-weeks', requireAdmin, async (req, res) => {
         for (const m of members) {
           await db.run(`
             INSERT INTO tnv_attendance (member_id, event_id, status)
-            VALUES (?, ?, 'co_mat')
+            VALUES (?, ?, 'tham_gia')
             ON CONFLICT (member_id, event_id) DO NOTHING
           `, [m.id, newEv.id]);
         }
@@ -348,7 +349,7 @@ router.post('/events', requireAdmin, async (req, res) => {
     for (const m of members) {
       await db.run(`
         INSERT INTO tnv_attendance (member_id, event_id, status)
-        VALUES (?, ?, 'co_mat')
+        VALUES (?, ?, 'tham_gia')
         ON CONFLICT (member_id, event_id) DO NOTHING
       `, [m.id, newEvent.id]);
     }
@@ -365,13 +366,20 @@ router.delete('/events/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
     await db.run('DELETE FROM tnv_attendance WHERE event_id = ?', [Number(id)]);
     await db.run('DELETE FROM tnv_events WHERE id = ?', [Number(id)]);
+
+    // Đồng bộ lại điểm chuyên cần cho các thành viên TNV sau khi xóa ca trực
+    const allMembers = await db.all('SELECT id FROM tnv_members');
+    for (const m of allMembers) {
+      await syncTnvWeeklyAttendancePoints(m.id, db);
+    }
+
     res.json({ success: true, message: 'Đã xóa ca trực thành công' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi xóa ca trực', error: error.message });
   }
 });
 
-// 14. Bảng điểm danh co giãn TNV (Elastic Attendance Matrix)
+// 14. Bảng điểm danh co giãn TNV (Elastic Attendance Matrix) - Chuẩn hóa 3 trạng thái
 router.get('/attendance-matrix', async (req, res) => {
   try {
     const { group } = req.query;
@@ -399,9 +407,12 @@ router.get('/attendance-matrix', async (req, res) => {
       let attendedCount = 0;
 
       for (const e of events) {
-        const status = attendanceMap[`${m.id}_${e.id}`] || 'vang_khong_phep';
+        let status = attendanceMap[`${m.id}_${e.id}`] || 'khong_phep';
+        if (status === 'co_mat') status = 'tham_gia';
+        else if (status === 'vang' || status === 'vang_khong_phep') status = 'khong_phep';
+
         records[e.id] = status;
-        if (status === 'co_mat' || status === 'di_muon') {
+        if (status === 'tham_gia') {
           attendedCount++;
         }
       }
@@ -426,7 +437,7 @@ router.get('/attendance-matrix', async (req, res) => {
   }
 });
 
-// 15. Cập nhật ô điểm danh TNV
+// 15. Cập nhật ô điểm danh TNV (Quy chuẩn 3 trạng thái & Tự động tính điểm chuyên cần theo tuần)
 router.post('/attendance', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { memberId, eventId, status } = req.body;
@@ -434,13 +445,28 @@ router.post('/attendance', checkGroupPermission('tnv'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin điểm danh' });
     }
 
+    // Chuẩn hóa trạng thái về 3 giá trị duy nhất: 'tham_gia', 'co_phep', 'khong_phep'
+    let normStatus = status;
+    if (status === 'co_mat') normStatus = 'tham_gia';
+    else if (status === 'vang' || status === 'vang_khong_phep') normStatus = 'khong_phep';
+    else if (status !== 'tham_gia' && status !== 'co_phep' && status !== 'khong_phep') {
+      normStatus = 'khong_phep';
+    }
+
     await db.run(`
       INSERT INTO tnv_attendance (member_id, event_id, status)
       VALUES (?, ?, ?)
       ON CONFLICT(member_id, event_id) DO UPDATE SET status = EXCLUDED.status
-    `, [Number(memberId), Number(eventId), status]);
+    `, [Number(memberId), Number(eventId), normStatus]);
 
-    res.json({ success: true, message: 'Cập nhật điểm danh TNV thành công' });
+    // Tự động tính toán và đồng bộ logic thưởng/phạt điểm chuyên cần theo tuần
+    await syncTnvWeeklyAttendancePoints(memberId, db);
+
+    res.json({
+      success: true,
+      message: 'Cập nhật điểm danh TNV và đồng bộ chuyên cần thành công',
+      status: normStatus
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi cập nhật điểm danh TNV', error: error.message });
   }

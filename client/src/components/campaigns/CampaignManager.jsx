@@ -50,11 +50,17 @@ export default function CampaignManager() {
   const [editingCampaign, setEditingCampaign] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
-  // Group quick registration form state
+  // Group registration & member selection state
   const [quickGroupType, setQuickGroupType] = useState('ctv');
   const [quickGroupNum, setQuickGroupNum] = useState(1);
   const [quickLeaderName, setQuickLeaderName] = useState('');
   const [quickRegisterLoading, setQuickRegisterLoading] = useState(false);
+  const [availableMembers, setAvailableMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState(new Set());
+  const [memberShifts, setMemberShifts] = useState({}); // { [memberId]: shiftId }
+  const [bulkShiftId, setBulkShiftId] = useState('');
+  const [regShiftFilter, setRegShiftFilter] = useState('all');
 
   // Form state for create / edit
   const [formData, setFormData] = useState({
@@ -65,7 +71,19 @@ export default function CampaignManager() {
     points: 10,
     targetType: 'all',
     status: 'dang_mo_dang_ky',
+    shifts: [],
   });
+
+  // Helper lấy danh sách kíp từ chiến dịch
+  const getCampaignShifts = (camp) => {
+    if (!camp || !camp.shifts) return [];
+    try {
+      const parsed = typeof camp.shifts === 'string' ? JSON.parse(camp.shifts) : camp.shifts;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  };
 
   // Đồng bộ thông tin nhóm nếu người dùng là Nhóm trưởng
   useEffect(() => {
@@ -122,6 +140,111 @@ export default function CampaignManager() {
     }
   }, [regGroupFilter, regTypeFilter]);
 
+  // Load danh sách thành viên của nhóm để chọn từng thành viên
+  const loadGroupMembers = async (type, groupNum) => {
+    setLoadingMembers(true);
+    try {
+      const res = type === 'ctv'
+        ? await api.getCtvMembers({ group: groupNum })
+        : await api.getTnvMembers({ group: groupNum });
+      if (res.success) {
+        const members = res.data || [];
+        setAvailableMembers(members);
+        // Mặc định chọn tất cả
+        const allIds = new Set(members.map((m) => m.id));
+        setSelectedMemberIds(allIds);
+
+        // Khởi tạo kíp mặc định nếu hoạt động có kíp
+        const shifts = getCampaignShifts(activeCampaign);
+        const defaultShiftId = shifts.length > 0 ? shifts[0].id : '';
+        const initialShiftMap = {};
+        members.forEach((m) => {
+          initialShiftMap[m.id] = defaultShiftId;
+        });
+        setMemberShifts(initialShiftMap);
+        setBulkShiftId(defaultShiftId);
+      }
+    } catch (err) {
+      // ignore
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeCampaign) {
+      loadGroupMembers(quickGroupType, quickGroupNum);
+    }
+  }, [activeCampaign?.id, quickGroupType, quickGroupNum]);
+
+  // Thao tác chọn từng thành viên
+  const handleToggleSelectMember = (memberId) => {
+    setSelectedMemberIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(memberId)) {
+        next.delete(memberId);
+      } else {
+        next.add(memberId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllMembers = () => {
+    setSelectedMemberIds(new Set(availableMembers.map((m) => m.id)));
+  };
+
+  const handleDeselectAllMembers = () => {
+    setSelectedMemberIds(new Set());
+  };
+
+  const handleMemberShiftChange = (memberId, shiftId) => {
+    setMemberShifts((prev) => ({
+      ...prev,
+      [memberId]: shiftId,
+    }));
+  };
+
+  const handleApplyBulkShift = (shiftId) => {
+    setBulkShiftId(shiftId);
+    setMemberShifts((prev) => {
+      const next = { ...prev };
+      availableMembers.forEach((m) => {
+        if (selectedMemberIds.has(m.id)) {
+          next[m.id] = shiftId;
+        }
+      });
+      return next;
+    });
+  };
+
+  // Thao tác Kíp trong modal Admin
+  const handleAddShift = () => {
+    const nextIdx = (formData.shifts || []).length + 1;
+    setFormData((prev) => ({
+      ...prev,
+      shifts: [
+        ...(prev.shifts || []),
+        { id: `shift_${Date.now()}_${nextIdx}`, name: `Kíp ${nextIdx}`, time: '' },
+      ],
+    }));
+  };
+
+  const handleUpdateShift = (index, field, value) => {
+    setFormData((prev) => {
+      const updated = [...(prev.shifts || [])];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, shifts: updated };
+    });
+  };
+
+  const handleRemoveShift = (index) => {
+    setFormData((prev) => {
+      const updated = (prev.shifts || []).filter((_, i) => i !== index);
+      return { ...prev, shifts: updated };
+    });
+  };
+
   const handleSaveCampaign = async (e) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.eventDate) {
@@ -166,10 +289,26 @@ export default function CampaignManager() {
     }
   };
 
-  // 1-Click Quick Group Registration for Group Leaders
+  // Đăng ký cho các thành viên được chọn (kèm phân Kíp nếu có)
   const handleQuickGroupRegister = async (e) => {
     e.preventDefault();
     if (!activeCampaign) return;
+
+    if (selectedMemberIds.size === 0) {
+      addToast('Vui lòng chọn ít nhất 1 thành viên để đăng ký!', 'warning');
+      return;
+    }
+
+    const shifts = getCampaignShifts(activeCampaign);
+    const selectedMembersPayload = Array.from(selectedMemberIds).map((id) => {
+      const shiftId = memberShifts[id] || (shifts[0]?.id || null);
+      const shiftObj = shifts.find((s) => s.id === shiftId);
+      return {
+        memberId: id,
+        shiftId: shiftObj?.id || null,
+        shiftName: shiftObj?.name || null,
+      };
+    });
 
     setQuickRegisterLoading(true);
     try {
@@ -177,6 +316,7 @@ export default function CampaignManager() {
         memberType: quickGroupType,
         groupNum: Number(quickGroupNum),
         registeredBy: quickLeaderName.trim() || `Nhóm trưởng Nhóm ${quickGroupNum}`,
+        selectedMembers: selectedMembersPayload,
       });
 
       if (res.success) {
@@ -287,12 +427,16 @@ export default function CampaignManager() {
 
   // Filtered registrations
   const filteredRegs = registrations.filter((r) => {
+    if (regShiftFilter !== 'all') {
+      if (r.shift_id !== regShiftFilter && r.shift_name !== regShiftFilter) return false;
+    }
     if (!regSearch) return true;
     const s = regSearch.toLowerCase();
     return (
       r.full_name?.toLowerCase().includes(s) ||
       r.mssv?.toLowerCase().includes(s) ||
-      r.class_name?.toLowerCase().includes(s)
+      r.class_name?.toLowerCase().includes(s) ||
+      (r.shift_name && r.shift_name.toLowerCase().includes(s))
     );
   });
 
@@ -325,6 +469,7 @@ export default function CampaignManager() {
                 points: 10,
                 targetType: 'all',
                 status: 'dang_mo_dang_ky',
+                shifts: [],
               });
               setShowEditModal(true);
             }}
@@ -377,6 +522,7 @@ export default function CampaignManager() {
             ) : (
               campaigns.map((camp) => {
                 const isSelected = activeCampaign?.id === camp.id;
+                const shifts = getCampaignShifts(camp);
                 return (
                   <div
                     key={camp.id}
@@ -389,9 +535,15 @@ export default function CampaignManager() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {getStatusBadge(camp.status)}
                           {getTargetBadge(camp.target_type || camp.targetType)}
+                          {shifts.length > 0 && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              {shifts.length} kíp
+                            </span>
+                          )}
                         </div>
                         <h4 className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
                           {camp.name}
@@ -454,6 +606,18 @@ export default function CampaignManager() {
                   <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                     +{activeCampaign.points}đ / lượt có mặt
                   </span>
+                  {(() => {
+                    const shifts = getCampaignShifts(activeCampaign);
+                    if (shifts.length > 0) {
+                      return (
+                        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                          {shifts.length} Kíp ({shifts.map((s) => s.name).join(', ')})
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
                 <h3 className="text-base font-extrabold text-slate-900 mt-1">
                   {activeCampaign.name}
@@ -469,7 +633,7 @@ export default function CampaignManager() {
                   href={`/api/campaigns/${activeCampaign.id}/export-xlsx`}
                   download
                   className="p-1.5 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-200"
-                  title="Xuất file Excel điểm danh hoạt động này"
+                  title="Xuất file Excel điểm danh hoạt động này (phân theo Kíp)"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
                 </a>
@@ -486,11 +650,12 @@ export default function CampaignManager() {
                           points: activeCampaign.points || 10,
                           targetType: activeCampaign.target_type || activeCampaign.targetType || 'all',
                           status: activeCampaign.status || 'dang_mo_dang_ky',
+                          shifts: getCampaignShifts(activeCampaign),
                         });
                         setShowEditModal(true);
                       }}
                       className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors border border-slate-200 cursor-pointer"
-                      title="Chỉnh sửa thông tin hoạt động"
+                      title="Chỉnh sửa thông tin hoạt động & Kíp"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
@@ -512,11 +677,19 @@ export default function CampaignManager() {
               </div>
             </div>
 
-            {/* SUPER CONVENIENT FOR GROUP LEADERS: 1-Click Group Registration */}
-            <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-b border-emerald-100">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 mb-2">
-                <Zap className="w-4 h-4 text-emerald-600 fill-emerald-600" />
-                <span>DÀNH CHO NHÓM TRƯỞNG & BCN: Đăng ký nhanh 1-Click cho toàn bộ nhóm</span>
+            {/* DÀNH CHO NHÓM TRƯỞNG & BCN: Đăng ký thành viên chọn lọc & Phân Kíp */}
+            <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-b border-emerald-100 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
+                  <Zap className="w-4 h-4 text-emerald-600 fill-emerald-600" />
+                  <span>Đăng ký tham gia cho thành viên trong nhóm</span>
+                </div>
+                {getCampaignShifts(activeCampaign).length > 0 && (
+                  <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    Hoạt động có phân Kíp trực
+                  </span>
+                )}
               </div>
 
               {isGuest ? (
@@ -534,73 +707,195 @@ export default function CampaignManager() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleQuickGroupRegister} className="grid grid-cols-1 sm:grid-cols-12 gap-2 text-xs">
-                  <div className="sm:col-span-3">
-                    {isLeader ? (
+                <form onSubmit={handleQuickGroupRegister} className="space-y-2.5 text-xs">
+                  {/* Nhóm & Người Đăng Ký */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    <div className="sm:col-span-4">
+                      {isLeader ? (
+                        <input
+                          type="text"
+                          readOnly
+                          value={quickGroupType === 'ctv' ? 'Cộng Tác Viên (CTV)' : 'Tình Nguyện Viên (TNV)'}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 font-bold text-slate-700 cursor-not-allowed"
+                        />
+                      ) : (
+                        <select
+                          value={quickGroupType}
+                          onChange={(e) => {
+                            setQuickGroupType(e.target.value);
+                            setQuickGroupNum(1);
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-white font-semibold text-slate-700"
+                        >
+                          <option value="ctv">Cộng Tác Viên (CTV)</option>
+                          <option value="tnv">Tình Nguyện Viên (TNV)</option>
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      {isLeader ? (
+                        <input
+                          type="text"
+                          readOnly
+                          value={`Nhóm ${quickGroupNum}`}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 font-bold text-slate-700 cursor-not-allowed"
+                        />
+                      ) : (
+                        <select
+                          value={quickGroupNum}
+                          onChange={(e) => setQuickGroupNum(Number(e.target.value))}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-white font-semibold text-slate-700"
+                        >
+                          {(quickGroupType === 'ctv' ? [1, 2, 3, 4, 5, 6, 7, 8] : [1, 2, 3, 4]).map((g) => (
+                            <option key={g} value={g}>
+                              Nhóm {g}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="sm:col-span-5">
                       <input
                         type="text"
-                        readOnly
-                        value={quickGroupType === 'ctv' ? 'Cộng Tác Viên (CTV)' : 'Tình Nguyện Viên (TNV)'}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 font-bold text-slate-700 cursor-not-allowed"
+                        value={quickLeaderName}
+                        onChange={(e) => setQuickLeaderName(e.target.value)}
+                        placeholder="Tên người đăng ký..."
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-white text-slate-700"
                       />
-                    ) : (
-                      <select
-                        value={quickGroupType}
-                        onChange={(e) => {
-                          setQuickGroupType(e.target.value);
-                          setQuickGroupNum(1);
-                        }}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-white font-semibold text-slate-700"
-                      >
-                        <option value="ctv">Cộng Tác Viên (CTV)</option>
-                        <option value="tnv">Tình Nguyện Viên (TNV)</option>
-                      </select>
-                    )}
+                    </div>
                   </div>
 
-                  <div className="sm:col-span-3">
-                    {isLeader ? (
-                      <input
-                        type="text"
-                        readOnly
-                        value={`Nhóm ${quickGroupNum}`}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-100 font-bold text-slate-700 cursor-not-allowed"
-                      />
-                    ) : (
-                      <select
-                        value={quickGroupNum}
-                        onChange={(e) => setQuickGroupNum(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-white font-semibold text-slate-700"
-                      >
-                        {(quickGroupType === 'ctv' ? [1, 2, 3, 4, 5, 6, 7, 8] : [1, 2, 3, 4]).map((g) => (
-                          <option key={g} value={g}>
-                            Nhóm {g}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
+                  {/* Danh Sách Thành Viên & Chọn Từng Người */}
+                  {loadingMembers ? (
+                    <div className="p-3 text-center text-slate-500 bg-white/70 rounded-xl border border-emerald-100">
+                      Đang tải danh sách thành viên nhóm {quickGroupNum}...
+                    </div>
+                  ) : availableMembers.length === 0 ? (
+                    <div className="p-3 text-center text-slate-400 bg-white/70 rounded-xl border border-emerald-100">
+                      Chưa có thành viên nào trong nhóm này.
+                    </div>
+                  ) : (
+                    <div className="bg-white/90 border border-emerald-200 rounded-xl p-2.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 pb-2">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSelectAllMembers}
+                            className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 cursor-pointer"
+                          >
+                            Chọn tất cả
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDeselectAllMembers}
+                            className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer"
+                          >
+                            Bỏ chọn
+                          </button>
+                          <span className="text-[11px] font-semibold text-slate-600">
+                            Đã chọn: <b className="text-emerald-700">{selectedMemberIds.size}</b>/{availableMembers.length}
+                          </span>
+                        </div>
 
-                  <div className="sm:col-span-3">
-                    <input
-                      type="text"
-                      value={quickLeaderName}
-                      onChange={(e) => setQuickLeaderName(e.target.value)}
-                      placeholder="Tên người đăng ký..."
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-white text-slate-700"
-                    />
-                  </div>
+                        {/* Gán nhanh Kíp cho toàn bộ thành viên đang chọn */}
+                        {getCampaignShifts(activeCampaign).length > 0 && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] text-slate-600 hidden sm:inline">Gán nhanh Kíp:</span>
+                            <select
+                              value={bulkShiftId}
+                              onChange={(e) => handleApplyBulkShift(e.target.value)}
+                              className="px-2 py-1 rounded text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-300 focus:outline-none"
+                            >
+                              <option value="">-- Chọn Kíp áp dụng --</option>
+                              {getCampaignShifts(activeCampaign).map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name} {s.time ? `(${s.time})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
 
-                  <div className="sm:col-span-3">
-                    <button
-                      type="submit"
-                      disabled={quickRegisterLoading}
-                      className="w-full inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-all text-xs cursor-pointer"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>{quickRegisterLoading ? 'Đang thêm...' : 'Đăng ký cả nhóm'}</span>
-                    </button>
-                  </div>
+                      {/* Danh sách cuộn chọn từng thành viên */}
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 divide-y divide-slate-100 pr-1">
+                        {availableMembers.map((m) => {
+                          const isChecked = selectedMemberIds.has(m.id);
+                          const shifts = getCampaignShifts(activeCampaign);
+                          const curShiftId = memberShifts[m.id] || (shifts[0]?.id || '');
+
+                          return (
+                            <div
+                              key={m.id}
+                              className={`pt-1.5 first:pt-0 flex items-center justify-between gap-2 p-1.5 rounded-lg transition-colors ${
+                                isChecked ? 'bg-emerald-50/60' : 'hover:bg-slate-50 opacity-70'
+                              }`}
+                            >
+                              <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleSelectMember(m.id)}
+                                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                                />
+                                <div className="truncate">
+                                  <span className="font-bold text-slate-800 text-xs">{m.full_name}</span>
+                                  <span className="text-[11px] text-slate-500 ml-1.5 font-mono">
+                                    ({m.mssv} {m.class_name ? `· ${m.class_name}` : ''})
+                                  </span>
+                                </div>
+                              </label>
+
+                              {/* Dropdown chọn Kíp riêng cho thành viên */}
+                              {shifts.length > 0 && (
+                                <div className="shrink-0">
+                                  <select
+                                    disabled={!isChecked}
+                                    value={curShiftId}
+                                    onChange={(e) => handleMemberShiftChange(m.id, e.target.value)}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors ${
+                                      isChecked
+                                        ? 'bg-white border-amber-300 text-amber-900'
+                                        : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                    }`}
+                                  >
+                                    {shifts.map((s) => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Nút Submit Đăng Ký */}
+                      <div className="pt-2 border-t border-emerald-100 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-500">
+                          {selectedMemberIds.size === 0
+                            ? 'Vui lòng tích chọn ít nhất 1 thành viên.'
+                            : `Sẽ đăng ký cho ${selectedMemberIds.size} thành viên được chọn.`}
+                        </span>
+                        <button
+                          type="submit"
+                          disabled={quickRegisterLoading || selectedMemberIds.size === 0}
+                          className="inline-flex items-center justify-center gap-1 px-4 py-1.5 rounded-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 shadow-sm transition-all text-xs cursor-pointer"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>
+                            {quickRegisterLoading
+                              ? 'Đang gửi...'
+                              : `Đăng ký (${selectedMemberIds.size} thành viên)`}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </form>
               )}
             </div>
@@ -644,6 +939,20 @@ export default function CampaignManager() {
                       </option>
                     ))}
                   </select>
+                  {getCampaignShifts(activeCampaign).length > 0 && (
+                    <select
+                      value={regShiftFilter}
+                      onChange={(e) => setRegShiftFilter(e.target.value)}
+                      className="px-2 py-1 text-xs border rounded-lg bg-amber-50 text-amber-900 border-amber-300 font-medium"
+                    >
+                      <option value="all">Tất cả Kíp</option>
+                      {getCampaignShifts(activeCampaign).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 
@@ -658,6 +967,7 @@ export default function CampaignManager() {
                       <th className="p-2.5 text-center">Lớp</th>
                       <th className="p-2.5 text-center">Đối tượng</th>
                       <th className="p-2.5 text-center">Nhóm</th>
+                      <th className="p-2.5 text-center">Kíp / Ca</th>
                       <th className="p-2.5 text-center min-w-[170px]">Điểm danh hoạt động</th>
                       <th className="p-2.5 pr-3 text-right">Xóa</th>
                     </tr>
@@ -665,13 +975,13 @@ export default function CampaignManager() {
                   <tbody className="divide-y divide-slate-100">
                     {loadingRegs ? (
                       <tr>
-                        <td colSpan={8} className="p-6 text-center text-slate-400">
+                        <td colSpan={9} className="p-6 text-center text-slate-400">
                           Đang tải danh sách đăng ký...
                         </td>
                       </tr>
                     ) : filteredRegs.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-6 text-center text-slate-400">
+                        <td colSpan={9} className="p-6 text-center text-slate-400">
                           Chưa có thành viên nào đăng ký tham gia.
                         </td>
                       </tr>
@@ -706,6 +1016,16 @@ export default function CampaignManager() {
                             </td>
                             <td className="p-2.5 text-center font-bold text-slate-700">
                               Nhóm {r.group_num}
+                            </td>
+                            <td className="p-2.5 text-center font-medium">
+                              {r.shift_name ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  {r.shift_name}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-mono text-[11px]">-</span>
+                              )}
                             </td>
 
                             {/* Direct Attendance Action Buttons */}
@@ -904,6 +1224,64 @@ export default function CampaignManager() {
                   placeholder="Nội dung công việc, phân công nhiệm vụ..."
                   className="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-emerald-500"
                 ></textarea>
+              </div>
+
+              {/* Cấu hình Kíp / Ca hoạt động */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block font-bold text-slate-700">
+                      Phân chia Kíp / Ca hoạt động (Tùy chọn)
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      Nếu hoạt động chia nhiều ca trực, thêm các Kíp tại đây
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddShift}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Thêm Kíp
+                  </button>
+                </div>
+
+                {(!formData.shifts || formData.shifts.length === 0) ? (
+                  <div className="p-2.5 text-center text-[11px] text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    Chưa thiết lập kíp (Áp dụng chung cho cả buổi). Bấm "+ Thêm Kíp" nếu cần chia ca.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {formData.shifts.map((shift, idx) => (
+                      <div key={shift.id || idx} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <input
+                          type="text"
+                          value={shift.name || ''}
+                          onChange={(e) => handleUpdateShift(idx, 'name', e.target.value)}
+                          placeholder={`VD: Kíp ${idx + 1}`}
+                          className="w-1/2 px-2 py-1 bg-white border rounded-lg text-xs font-semibold focus:ring-1 focus:ring-emerald-500"
+                          required
+                        />
+                        <input
+                          type="text"
+                          value={shift.time || ''}
+                          onChange={(e) => handleUpdateShift(idx, 'time', e.target.value)}
+                          placeholder="VD: 07:30 - 11:30"
+                          className="w-1/2 px-2 py-1 bg-white border rounded-lg text-xs focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveShift(idx)}
+                          className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          title="Xóa kíp này"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

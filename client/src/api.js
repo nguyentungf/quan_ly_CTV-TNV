@@ -131,11 +131,14 @@ export const api = {
     return res.json();
   },
 
-  updateCtvAttendance: async (data) => {
+  updateCtvAttendance: async (memberIdOrData, eventId, status) => {
+    const payload = typeof memberIdOrData === 'object'
+      ? memberIdOrData
+      : { memberId: memberIdOrData, eventId, status };
     const res = await authFetch(`${API_BASE}/ctv/attendance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
     return res.json();
   },
@@ -278,11 +281,14 @@ export const api = {
     return res.json();
   },
 
-  updateTnvAttendance: async (data) => {
+  updateTnvAttendance: async (memberIdOrData, eventId, status) => {
+    const payload = typeof memberIdOrData === 'object'
+      ? memberIdOrData
+      : { memberId: memberIdOrData, eventId, status };
     const res = await authFetch(`${API_BASE}/tnv/attendance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
     return res.json();
   },
