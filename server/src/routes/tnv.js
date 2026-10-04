@@ -38,11 +38,11 @@ router.get('/members', async (req, res) => {
       params.push(status);
     }
 
-    query += " ORDER BY group_num ASC, CASE role WHEN 'Nhóm trưởng' THEN 1 WHEN 'Nhóm phó' THEN 2 ELSE 3 END, total_points DESC, mssv ASC";
+    query += " ORDER BY group_num ASC, CASE role WHEN 'Nhóm trưởng' THEN 1 WHEN 'Nhóm phó' THEN 2 ELSE 3 END, COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) DESC, mssv ASC";
     const rows = await db.all(query, params);
 
     // Tính điểm cao nhất (Max Score) toàn bộ hệ thống TNV
-    const maxScoreRow = await db.get('SELECT MAX(total_points) as max_score FROM tnv_members');
+    const maxScoreRow = await db.get('SELECT MAX(COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0)) as max_score FROM tnv_members m');
     const maxScore = maxScoreRow && maxScoreRow.max_score > 0 ? maxScoreRow.max_score : 100;
 
     // Gắn tỷ lệ benchmark so với Top 1
@@ -238,7 +238,7 @@ router.get('/top-5', async (req, res) => {
       SELECT m.*, COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) as total_points
       FROM tnv_members m
       WHERE m.status = 'Đang hoạt động' 
-      ORDER BY total_points DESC, m.mssv ASC 
+      ORDER BY COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) DESC, m.mssv ASC 
       LIMIT 5
     `);
 
@@ -262,7 +262,7 @@ router.get('/discipline', async (req, res) => {
       SELECT m.*, COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) as total_points
       FROM tnv_members m
       WHERE m.warning_level IN ('canh_cao_1', 'canh_cao_2') 
-      ORDER BY CASE m.warning_level WHEN 'canh_cao_2' THEN 1 ELSE 2 END, total_points ASC
+      ORDER BY CASE m.warning_level WHEN 'canh_cao_2' THEN 1 ELSE 2 END, COALESCE((SELECT SUM(points) FROM tnv_activities WHERE member_id = m.id), 0) ASC
     `);
 
     res.json({ success: true, data: disciplinedMembers });
