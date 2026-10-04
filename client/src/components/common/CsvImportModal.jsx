@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, Download, X, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import { useToast } from './Toast';
+import api from '../../api';
 
 export default function CsvImportModal({
   isOpen,
@@ -49,13 +50,12 @@ export default function CsvImportModal({
       const formData = new FormData();
       formData.append('file', file);
 
-      const endpoint = isCtv ? '/api/ctv/import-file' : '/api/tnv/import-file';
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
+      let data;
+      if (isCtv) {
+        data = await api.importCtvFile(formData);
+      } else {
+        data = await api.importTnvFile(formData);
+      }
       if (data.success) {
         addToast(data.message, 'success');
         if (data.errors && data.errors.length > 0) {
