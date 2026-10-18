@@ -26,6 +26,10 @@ import TnvActivityModal from './components/tnv/TnvActivityModal';
 // Campaigns Component
 import CampaignManager from './components/campaigns/CampaignManager';
 
+// Settings & Evaluation
+import SettingsModal from './components/settings/SettingsModal';
+import EvaluationManagerModal from './components/common/EvaluationManagerModal';
+
 // Common
 import CsvImportModal from './components/common/CsvImportModal';
 import { Users, HeartHandshake, CalendarCheck2, ShieldAlert, Award, Layers } from 'lucide-react';
@@ -66,6 +70,11 @@ function DashboardContent() {
   const [recordingTnvMember, setRecordingTnvMember] = useState(null);
 
   const [importModalType, setImportModalType] = useState(null); // 'ctv' | 'tnv' | null
+
+  // System Settings & Periodic Evaluation State
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showEvaluationModal, setShowEvaluationModal] = useState(false);
+  const [evaluationModalType, setEvaluationModalType] = useState('ctv'); // 'ctv' | 'tnv'
 
   // Initial load
   useEffect(() => {
@@ -213,6 +222,7 @@ function DashboardContent() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onRefresh={handleRefreshAll}
+        onOpenSettings={() => setShowSettingsModal(true)}
         stats={{
           ctvCount: ctvMembers.length,
           tnvCount: tnvMembers.length,
@@ -301,6 +311,10 @@ function DashboardContent() {
                 onRateMember={(m) => setRatingCtvMember(m)}
                 onOpenMergeModal={() => setShowCtvMergeModal(true)}
                 onOpenImportModal={() => setImportModalType('ctv')}
+                onOpenEvaluationModal={() => {
+                  setEvaluationModalType('ctv');
+                  setShowEvaluationModal(true);
+                }}
                 onReload={loadCtvData}
               />
             ) : (
@@ -414,6 +428,10 @@ function DashboardContent() {
                 onDeleteMember={handleDeleteTnv}
                 onRecordActivity={(m) => setRecordingTnvMember(m)}
                 onOpenImportModal={() => setImportModalType('tnv')}
+                onOpenEvaluationModal={() => {
+                  setEvaluationModalType('tnv');
+                  setShowEvaluationModal(true);
+                }}
                 onEditWarning={(m) => {
                   setTnvSubTab('discipline');
                 }}
@@ -502,6 +520,23 @@ function DashboardContent() {
         onClose={() => setImportModalType(null)}
         onSuccess={() => {
           if (importModalType === 'ctv') loadCtvData();
+          else loadTnvData();
+        }}
+      />
+
+      {/* System Evaluation Rubric Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+      />
+
+      {/* Evaluation Manager Modal (Đánh giá Nửa kỳ / Toàn kỳ) */}
+      <EvaluationManagerModal
+        isOpen={showEvaluationModal}
+        type={evaluationModalType}
+        onClose={() => setShowEvaluationModal(false)}
+        onSuccess={() => {
+          if (evaluationModalType === 'ctv') loadCtvData();
           else loadTnvData();
         }}
       />

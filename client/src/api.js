@@ -385,9 +385,66 @@ export const api = {
     return res.json();
   },
 
+  bulkUpdateCampaignAttendance: async (campaignId, registrationIds, attendanceStatus) => {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/attendance-bulk`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationIds, attendanceStatus }),
+    });
+    return res.json();
+  },
+
   deleteCampaignRegistration: async (campaignId, registrationId) => {
     const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/registrations/${registrationId}`, {
       method: 'DELETE',
+    });
+    return res.json();
+  },
+
+  // ===================== EVALUATIONS APIs =====================
+  getEvaluationRubric: async () => {
+    const res = await authFetch(`${API_BASE}/evaluations/rubric`);
+    return res.json();
+  },
+
+  updateEvaluationRubric: async (data) => {
+    const res = await authFetch(`${API_BASE}/evaluations/rubric`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  getEvaluationSummary: async (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    const res = await authFetch(`${API_BASE}/evaluations/summary?${q}`);
+    return res.json();
+  },
+
+  saveEvaluationDraft: async (data) => {
+    const res = await authFetch(`${API_BASE}/evaluations/grade-draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  finalizeEvaluation: async (data) => {
+    const res = await authFetch(`${API_BASE}/evaluations/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  unlockEvaluation: async (data) => {
+    const res = await authFetch(`${API_BASE}/evaluations/unlock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
     return res.json();
   },

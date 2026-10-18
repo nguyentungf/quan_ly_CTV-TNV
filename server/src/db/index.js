@@ -316,12 +316,38 @@ export async function initSchema() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(role, target_type, group_num)
       );
+
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key VARCHAR(100) PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS evaluations (
+        id SERIAL PRIMARY KEY,
+        period VARCHAR(20) NOT NULL,
+        member_type VARCHAR(20) NOT NULL,
+        member_id INTEGER NOT NULL,
+        group_num INTEGER NOT NULL,
+        attendance_score INTEGER DEFAULT 0,
+        activity_score INTEGER DEFAULT 0,
+        qualitative_score INTEGER DEFAULT 0,
+        total_score INTEGER DEFAULT 0,
+        rank_grade VARCHAR(50) DEFAULT 'Khá',
+        evaluator_name VARCHAR(255) DEFAULT '',
+        notes TEXT DEFAULT '',
+        is_locked INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(period, member_type, member_id)
+      );
     `);
     try { await pool.query(`ALTER TABLE ctv_members ADD COLUMN IF NOT EXISTS gender VARCHAR(10) DEFAULT 'Nam'`); } catch (e) {}
     try { await pool.query(`ALTER TABLE ctv_members ADD COLUMN IF NOT EXISTS class_name VARCHAR(100) DEFAULT ''`); } catch (e) {}
     try { await pool.query(`ALTER TABLE tnv_members ADD COLUMN IF NOT EXISTS gender VARCHAR(10) DEFAULT 'Nam'`); } catch (e) {}
     try { await pool.query(`ALTER TABLE tnv_members ADD COLUMN IF NOT EXISTS class_name VARCHAR(100) DEFAULT ''`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS shifts TEXT DEFAULT '[]'`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS required_participants INTEGER DEFAULT 0`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS shift_id VARCHAR(100) DEFAULT ''`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS shift_name VARCHAR(255) DEFAULT ''`); } catch (e) {}
     console.log('✅ Khởi tạo cấu trúc bảng PostgreSQL hoàn tất!');
@@ -458,6 +484,31 @@ export async function initSchema() {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(role, target_type, group_num)
       );
+
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS evaluations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        period TEXT NOT NULL,
+        member_type TEXT NOT NULL,
+        member_id INTEGER NOT NULL,
+        group_num INTEGER NOT NULL,
+        attendance_score INTEGER DEFAULT 0,
+        activity_score INTEGER DEFAULT 0,
+        qualitative_score INTEGER DEFAULT 0,
+        total_score INTEGER DEFAULT 0,
+        rank_grade TEXT DEFAULT 'Khá',
+        evaluator_name TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        is_locked INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(period, member_type, member_id)
+      );
     `);
 
     // Migration an toàn các cột mới nếu đã có file sqlite cũ
@@ -466,8 +517,28 @@ export async function initSchema() {
     try { sqlite.exec(`ALTER TABLE tnv_members ADD COLUMN gender TEXT DEFAULT 'Nam'`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE tnv_members ADD COLUMN class_name TEXT DEFAULT ''`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaigns ADD COLUMN shifts TEXT DEFAULT '[]'`); } catch (e) {}
+    try { sqlite.exec(`ALTER TABLE campaigns ADD COLUMN required_participants INTEGER DEFAULT 0`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN shift_id TEXT DEFAULT ''`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN shift_name TEXT DEFAULT ''`); } catch (e) {}
+  }
+
+  // Tự động kiểm tra và tạo cài đặt mặc định ban đầu nếu chưa có
+  try {
+    const existingRubric = await db.get("SELECT value FROM system_settings WHERE key = 'evaluation_rubric'");
+    if (!existingRubric) {
+      const defaultRubric = JSON.stringify({
+        attendanceWeight: 30,
+        activityWeight: 50,
+        qualitativeWeight: 20,
+        thresholdExcellent: 85,
+        thresholdGood: 70,
+        thresholdFair: 50
+      });
+      await db.run("INSERT INTO system_settings (key, value) VALUES ('evaluation_rubric', ?)", [defaultRubric]);
+      console.log('⚙️ Đã khởi tạo cấu hình thang điểm đánh giá mặc định (system_settings)!');
+    }
+  } catch (settingsErr) {
+    console.warn('Lưu ý khi khởi tạo system_settings:', settingsErr.message);
   }
 
   // Tự động kiểm tra và tạo tài khoản xác thực mặc định nếu chưa có

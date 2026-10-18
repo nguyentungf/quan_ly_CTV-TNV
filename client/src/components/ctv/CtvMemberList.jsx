@@ -43,6 +43,7 @@ export default function CtvMemberList({
   onRateMember,
   onOpenMergeModal,
   onOpenImportModal,
+  onOpenEvaluationModal,
   onReload,
 }) {
   const { addToast } = useToast();
@@ -208,6 +209,16 @@ export default function CtvMemberList({
                 </div>
               )}
             </div>
+
+            {/* Đánh Giá Kỳ (Nửa kỳ / Toàn kỳ) */}
+            <button
+              onClick={onOpenEvaluationModal}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors shadow-2xs cursor-pointer"
+              title="Bảng tổng hợp & Chấm điểm đánh giá Nửa kỳ / Toàn kỳ"
+            >
+              <Award className="w-3.5 h-3.5 text-amber-600" />
+              <span>Đánh Giá Kỳ</span>
+            </button>
 
             {/* Thêm Mới */}
             {isAdmin || (isLeader && user?.targetType === 'ctv') ? (

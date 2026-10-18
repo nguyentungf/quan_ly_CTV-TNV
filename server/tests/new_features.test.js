@@ -5,6 +5,7 @@ import { generateTestToken } from './helpers/token.js';
 import { db, initSchema } from '../src/db/index.js';
 import campaignsRouter from '../src/routes/campaigns.js';
 import tnvRouter from '../src/routes/tnv.js';
+import evaluationsRouter from '../src/routes/evaluations.js';
 
 describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
   let app;
@@ -16,6 +17,7 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     app = createTestApp();
     app.use('/api/campaigns', campaignsRouter);
     app.use('/api/tnv', tnvRouter);
+    app.use('/api/evaluations', evaluationsRouter);
 
     adminToken = generateTestToken({
       role: 'admin',
@@ -57,9 +59,17 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     expect(createRes.body.success).toBe(true);
     const campaignId = createRes.body.data.id;
 
-    // 2. Lấy 2 thành viên CTV nhóm 1
-    const ctvMembers = await db.all("SELECT id FROM ctv_members WHERE group_num = 1 LIMIT 2");
-    expect(ctvMembers.length).toBeGreaterThanOrEqual(2);
+    // 2. Đảm bảo có ít nhất 2 thành viên CTV nhóm 1
+    let ctvMembers = await db.all("SELECT id FROM ctv_members WHERE group_num = 1 LIMIT 2");
+    while (ctvMembers.length < 2) {
+      const idx = ctvMembers.length + 1;
+      const m = await db.get(`
+        INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
+        VALUES (?, ?, 1, 'Thành viên', 'Nam', 'ET1', '0912345678', 'test@sis.edu.vn', 0, 0, 0, 'Đang hoạt động')
+        RETURNING *
+      `, [`test_ctv_fix_${Date.now()}_${idx}`, `CTV Test ${idx}`]);
+      ctvMembers.push(m);
+    }
 
     const m1 = ctvMembers[0].id;
     const m2 = ctvMembers[1].id;
@@ -122,9 +132,17 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
 
     const mid = newMember.id;
 
-    // Lấy 2 event CTV
-    const events = await db.all("SELECT id FROM ctv_events LIMIT 2");
-    expect(events.length).toBeGreaterThanOrEqual(2);
+    // Lấy 2 event CTV, nếu thiếu thì tự tạo
+    let events = await db.all("SELECT id FROM ctv_events LIMIT 2");
+    while (events.length < 2) {
+      const idx = events.length + 1;
+      const ev = await db.get(`
+        INSERT INTO ctv_events (name, event_date)
+        VALUES (?, '2026-10-20')
+        RETURNING *
+      `, [`Tuần Test ${idx}`]);
+      events.push(ev);
+    }
     const e1 = events[0].id;
     const e2 = events[1].id;
 
@@ -173,5 +191,162 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     await db.run('DELETE FROM ctv_attendance WHERE member_id = ?', [mid]);
     await db.run('DELETE FROM ctv_point_logs WHERE member_id = ?', [mid]);
     await db.run('DELETE FROM ctv_members WHERE id = ?', [mid]);
+  });
+
+  // Nghiệp vụ Đánh giá Nửa kỳ & Toàn kỳ
+  it('Nghiệp vụ Đánh giá Nửa kỳ & Toàn kỳ: Quản lý Rubric, Bảng tổng hợp dynamic, Lưu nháp và Admin Khóa điểm', async () => {
+    // 1. Kiểm tra lấy rubric mặc định
+    const rubricRes = await request(app).get('/api/evaluations/rubric');
+    expect(rubricRes.status).toBe(200);
+    expect(rubricRes.body.success).toBe(true);
+    expect(rubricRes.body.data.attendanceWeight).toBe(30);
+
+    // 2. Tạo 1 CTV test để đánh giá
+    const ctvMssv = `eval_ctv_${Date.now()}`;
+    const testCtv = await db.get(`
+      INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
+      VALUES (?, 'CTV Test Đánh Giá', 1, 'Thành viên', 'Nữ', 'K67', '0988776655', 'eval@sis.edu.vn', 10, 20, 30, 'Đang hoạt động')
+      RETURNING *
+    `, [ctvMssv]);
+
+    // 3. Lấy bảng tổng hợp summary cho CTV Nửa kỳ (midterm)
+    const summaryRes = await request(app)
+      .get('/api/evaluations/summary?type=ctv&milestone=midterm&group=1')
+      .set('Authorization', `Bearer ${leaderToken}`);
+    expect(summaryRes.status).toBe(200);
+    expect(summaryRes.body.success).toBe(true);
+    const targetMember = summaryRes.body.data.find(m => m.id === testCtv.id);
+    expect(targetMember).toBeDefined();
+    expect(targetMember.is_finalized).toBe(false);
+
+    // 4. Trưởng nhóm chấm nháp điểm định tính & nhận xét
+    const draftRes = await request(app)
+      .post('/api/evaluations/grade-draft')
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({
+        memberType: 'ctv',
+        memberId: testCtv.id,
+        milestone: 'midterm',
+        qualitativeScore: 18,
+        leaderNotes: 'Rất tích cực, hoàn thành tốt nhiệm vụ'
+      });
+    expect(draftRes.status).toBe(200);
+    expect(draftRes.body.success).toBe(true);
+    expect(draftRes.body.data.qualitative_score).toBe(18);
+
+    // 5. Admin Khóa kết quả & chốt xếp loại
+    const finalizeRes = await request(app)
+      .post('/api/evaluations/finalize')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        memberType: 'ctv',
+        memberId: testCtv.id,
+        milestone: 'midterm'
+      });
+    expect(finalizeRes.status).toBe(200);
+    expect(finalizeRes.body.success).toBe(true);
+    expect(finalizeRes.body.data.is_finalized).toBe(1);
+    expect(finalizeRes.body.data.classification).toBeDefined();
+
+    // 6. Trưởng nhóm cố gắng chấm lại khi đã khóa -> phải bị từ chối 400
+    const failDraftRes = await request(app)
+      .post('/api/evaluations/grade-draft')
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({
+        memberType: 'ctv',
+        memberId: testCtv.id,
+        milestone: 'midterm',
+        qualitativeScore: 15,
+        leaderNotes: 'Sửa điểm'
+      });
+    expect(failDraftRes.status).toBe(400);
+
+    // 7. Cleanup
+    await db.run('DELETE FROM evaluations WHERE member_id = ?', [testCtv.id]);
+    await db.run('DELETE FROM ctv_members WHERE id = ?', [testCtv.id]);
+  });
+
+  // Nghiệp vụ Hoạt động: Chặn CTV đăng ký hoạt động TNV & Xóa an toàn hoàn tác điểm
+  it('Nghiệp vụ Hoạt động: Chặn CTV đăng ký hoạt động TNV & Xóa hoạt động an toàn tự động hoàn tác điểm', async () => {
+    // 1. Tạo hoạt động dành riêng cho TNV
+    const campRes = await request(app)
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Chiến Dịch Riêng Của TNV',
+        description: 'Chỉ TNV mới được đăng ký',
+        location: 'Hội trường C1',
+        eventDate: '2026-11-25',
+        points: 15,
+        targetType: 'tnv',
+        status: 'dang_mo_dang_ky'
+      });
+    expect(campRes.status).toBe(200);
+    const campId = campRes.body.data.id;
+
+    // Tạo 1 CTV test
+    const ctvUser = await db.get(`
+      INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
+      VALUES (?, 'CTV Thử Đăng Ký TNV', 1, 'Thành viên', 'Nam', 'ET1', '0912', 'ctv@sis', 0, 0, 0, 'Đang hoạt động')
+      RETURNING *
+    `, [`ctv_guard_${Date.now()}`]);
+
+    // 2. CTV cố gắng đăng ký -> Bị chặn 403 Forbidden
+    const blockRes = await request(app)
+      .post(`/api/campaigns/${campId}/register`)
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({
+        memberType: 'ctv',
+        memberId: ctvUser.id,
+        registeredBy: 'Nhóm trưởng'
+      });
+    expect(blockRes.status).toBe(403);
+    expect(blockRes.body.success).toBe(false);
+    expect(blockRes.body.message).toContain('chỉ dành riêng cho Tình Nguyện Viên');
+
+    // 3. Tạo 1 TNV test và đăng ký vào hoạt động
+    const tnvUser = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, class_name, phone, email, total_points, status, warning_level)
+      VALUES (?, 'TNV Test Điểm Danh', 1, 'Thành viên', 'K68', '0977', 'tnv@sis', 50, 'Đang hoạt động', 'none')
+      RETURNING *
+    `, [`tnv_test_${Date.now()}`]);
+
+    const regTnvRes = await request(app)
+      .post(`/api/campaigns/${campId}/register`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        memberType: 'tnv',
+        memberId: tnvUser.id,
+        registeredBy: 'Admin'
+      });
+    expect(regTnvRes.status).toBe(200);
+    const regId = regTnvRes.body.data.id;
+
+    // 4. Điểm danh 'co_mat' -> TNV được cộng 15 điểm (50 + 15 = 65)
+    const attRes = await request(app)
+      .put(`/api/campaigns/${campId}/attendance`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        registrationId: regId,
+        attendanceStatus: 'co_mat'
+      });
+    expect(attRes.status).toBe(200);
+
+    const tnvAfterAtt = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [tnvUser.id]);
+    expect(tnvAfterAtt.total_points).toBe(65);
+
+    // 5. Admin Xóa chiến dịch -> Điểm số 15 điểm phải tự động hoàn tác (65 - 15 = 50)
+    const delRes = await request(app)
+      .delete(`/api/campaigns/${campId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(delRes.status).toBe(200);
+
+    const tnvAfterDel = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [tnvUser.id]);
+    expect(tnvAfterDel.total_points).toBe(50);
+
+    // 6. Cleanup
+    await db.run('DELETE FROM ctv_members WHERE id = ?', [ctvUser.id]);
+    await db.run('DELETE FROM tnv_members WHERE id = ?', [tnvUser.id]);
+    await db.run('DELETE FROM tnv_activities WHERE member_id = ?', [tnvUser.id]);
   });
 });

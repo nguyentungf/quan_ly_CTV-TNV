@@ -11,6 +11,7 @@ router.get('/', async (req, res) => {
     const { status, targetType, search } = req.query;
     let query = `
       SELECT c.*,
+        COALESCE(c.required_participants, 0) as required_participants,
         (SELECT COUNT(*) FROM campaign_registrations r WHERE r.campaign_id = c.id) as registered_count,
         (SELECT COUNT(*) FROM campaign_registrations r WHERE r.campaign_id = c.id AND r.attendance_status = 'co_mat') as attended_count,
         (SELECT COUNT(*) FROM campaign_registrations r WHERE r.campaign_id = c.id AND r.attendance_status = 'vang') as absent_count
@@ -36,7 +37,21 @@ router.get('/', async (req, res) => {
     query += ' ORDER BY c.event_date DESC, c.id DESC';
     const rows = await db.all(query, params);
 
-    res.json({ success: true, data: rows });
+    // Tính toán số lượng người còn thiếu cho từng hoạt động
+    const enrichedRows = rows.map(camp => {
+      const required = Number(camp.required_participants || 0);
+      const registered = Number(camp.registered_count || 0);
+      const missingCount = required > 0 ? Math.max(0, required - registered) : 0;
+      return {
+        ...camp,
+        required_participants: required,
+        registered_count: registered,
+        missing_count: missingCount,
+        is_full: required > 0 && registered >= required
+      };
+    });
+
+    res.json({ success: true, data: enrichedRows });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi tải danh sách hoạt động', error: error.message });
   }
@@ -45,26 +60,28 @@ router.get('/', async (req, res) => {
 // 2. Thêm hoạt động mới
 router.post('/', requireAdmin, async (req, res) => {
   try {
-    const { name, description, location, eventDate, points, targetType, status, shifts } = req.body;
+    const { name, description, location, eventDate, points, targetType, status, shifts, requiredParticipants } = req.body;
     if (!name || !eventDate) {
       return res.status(400).json({ success: false, message: 'Tên hoạt động và ngày tổ chức là bắt buộc' });
     }
 
     const shiftsStr = Array.isArray(shifts) ? JSON.stringify(shifts) : (typeof shifts === 'string' ? shifts : '[]');
+    const reqPart = requiredParticipants !== undefined ? Math.max(0, Number(requiredParticipants)) : 0;
 
     const newCamp = await db.get(`
-      INSERT INTO campaigns (name, description, location, event_date, points, target_type, status, shifts)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO campaigns (name, description, location, event_date, points, target_type, status, shifts, required_participants)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *
     `, [
       name.trim(),
       description?.trim() || '',
       location?.trim() || '',
       eventDate.trim(),
-      points !== undefined ? Number(points) : 10,
+      points !== undefined ? Math.max(0, Number(points)) : 10,
       targetType || 'all',
       status || 'dang_mo_dang_ky',
-      shiftsStr
+      shiftsStr,
+      reqPart
     ]);
 
     res.json({ success: true, message: 'Tạo hoạt động thành công', data: newCamp });
@@ -77,23 +94,25 @@ router.post('/', requireAdmin, async (req, res) => {
 router.put('/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, location, eventDate, points, targetType, status, shifts } = req.body;
+    const { name, description, location, eventDate, points, targetType, status, shifts, requiredParticipants } = req.body;
 
     const shiftsStr = Array.isArray(shifts) ? JSON.stringify(shifts) : (typeof shifts === 'string' ? shifts : '[]');
+    const reqPart = requiredParticipants !== undefined ? Math.max(0, Number(requiredParticipants)) : 0;
 
     await db.run(`
       UPDATE campaigns 
-      SET name = ?, description = ?, location = ?, event_date = ?, points = ?, target_type = ?, status = ?, shifts = ?
+      SET name = ?, description = ?, location = ?, event_date = ?, points = ?, target_type = ?, status = ?, shifts = ?, required_participants = ?
       WHERE id = ?
     `, [
       name?.trim(),
       description?.trim(),
       location?.trim(),
       eventDate?.trim(),
-      points !== undefined ? Number(points) : 10,
+      points !== undefined ? Math.max(0, Number(points)) : 10,
       targetType,
       status,
       shiftsStr,
+      reqPart,
       Number(id)
     ]);
 
@@ -103,13 +122,56 @@ router.put('/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// 4. Xóa hoạt động
+// 4. Xóa hoạt động (Tự động thu hồi điểm an toàn cho các thành viên đã tham gia)
 router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    await db.run('DELETE FROM campaign_registrations WHERE campaign_id = ?', [Number(id)]);
-    await db.run('DELETE FROM campaigns WHERE id = ?', [Number(id)]);
-    res.json({ success: true, message: 'Đã xóa hoạt động' });
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    // Lấy toàn bộ các bản ghi đăng ký đã được cộng điểm
+    const awardedRegs = await db.all(`
+      SELECT * FROM campaign_registrations 
+      WHERE campaign_id = ? AND points_awarded > 0
+    `, [Number(id)]);
+
+    await db.transaction(async (txDb) => {
+      // 1. Tự động thu hồi điểm và ghi log điều chỉnh
+      for (const reg of awardedRegs) {
+        if (reg.member_type === 'ctv') {
+          await txDb.run(`
+            UPDATE ctv_members 
+            SET activity_points = activity_points - ?, total_points = total_points - ? 
+            WHERE id = ?
+          `, [reg.points_awarded, reg.points_awarded, reg.member_id]);
+
+          await txDb.run(`
+            INSERT INTO ctv_point_logs (member_id, type, title, points_delta, note)
+            VALUES (?, 'activity', ?, ?, ?)
+          `, [reg.member_id, `Thu hồi điểm do xóa hoạt động: ${camp.name}`, -reg.points_awarded, 'Hệ thống tự động thu hồi điểm khi Admin xóa hoạt động']);
+        } else {
+          await txDb.run(`
+            UPDATE tnv_members 
+            SET total_points = total_points - ? 
+            WHERE id = ?
+          `, [reg.points_awarded, reg.member_id]);
+
+          await txDb.run(`
+            INSERT INTO tnv_activities (member_id, category, points, note)
+            VALUES (?, ?, ?, ?)
+          `, [reg.member_id, 'Hủy hoạt động', -reg.points_awarded, `Thu hồi điểm do xóa hoạt động: ${camp.name}`]);
+        }
+      }
+
+      // 2. Xóa toàn bộ dữ liệu đăng ký và chiến dịch
+      await txDb.run('DELETE FROM campaign_registrations WHERE campaign_id = ?', [Number(id)]);
+      await txDb.run('DELETE FROM campaigns WHERE id = ?', [Number(id)]);
+    });
+
+    res.json({
+      success: true,
+      message: `Đã xóa hoạt động "${camp.name}" thành công! ${awardedRegs.length > 0 ? `Đã tự động thu hồi điểm của ${awardedRegs.length} thành viên tham gia.` : ''}`
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi xóa hoạt động', error: error.message });
   }
@@ -197,6 +259,23 @@ router.post('/:id/register', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin người đăng ký' });
     }
 
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    // Kiểm tra trạng thái hoạt động
+    if (camp.status !== 'dang_mo_dang_ky') {
+      return res.status(400).json({ success: false, message: 'Hoạt động này hiện đã đóng hoặc không mở đăng ký!' });
+    }
+
+    // Kiểm tra phân quyền đối tượng mục tiêu:
+    // CTV KHÔNG ĐƯỢC PHÉP đăng ký hoạt động chỉ dành cho TNV
+    if (camp.target_type === 'tnv' && memberType === 'ctv') {
+      return res.status(403).json({
+        success: false,
+        message: 'Hoạt động này chỉ dành riêng cho Tình Nguyện Viên, Cộng Tác Viên không được phép đăng ký!'
+      });
+    }
+
     // Kiểm tra trùng
     const existing = await db.get(`
       SELECT id FROM campaign_registrations 
@@ -225,13 +304,17 @@ router.post('/:id/register', requireAuth, async (req, res) => {
       });
     }
 
+    const registrantTag = (camp.target_type === 'ctv' && memberType === 'tnv')
+      ? `${registeredBy || req.user.displayName || 'Tự đăng ký'} (TNV hỗ trợ)`
+      : (registeredBy || req.user.displayName || 'Tự đăng ký');
+
     const reg = await db.get(`
       INSERT INTO campaign_registrations (campaign_id, member_type, member_id, group_num, shift_id, shift_name, registered_by, attendance_status, points_awarded)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'chua_diem_danh', 0)
       RETURNING *
-    `, [Number(id), memberType, Number(memberId), groupNum, shiftId || '', shiftName || '', registeredBy || req.user.displayName || 'Tự đăng ký']);
+    `, [Number(id), memberType, Number(memberId), groupNum, shiftId || '', shiftName || '', registrantTag]);
 
-    res.json({ success: true, message: 'Đăng ký thành công', data: reg });
+    res.json({ success: true, message: 'Đăng ký tham gia hoạt động thành công', data: reg });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi đăng ký', error: error.message });
   }
@@ -248,6 +331,23 @@ router.post('/:id/register-group', requireAuth, async (req, res) => {
 
     if (!memberType || isNaN(gNum)) {
       return res.status(400).json({ success: false, message: 'Thiếu loại nhân sự hoặc số nhóm' });
+    }
+
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [campId]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    // Kiểm tra trạng thái hoạt động
+    if (camp.status !== 'dang_mo_dang_ky') {
+      return res.status(400).json({ success: false, message: 'Hoạt động này hiện đã đóng hoặc không mở đăng ký!' });
+    }
+
+    // Kiểm tra phân quyền đối tượng mục tiêu:
+    // CTV KHÔNG ĐƯỢC PHÉP đăng ký hoạt động chỉ dành cho TNV
+    if (camp.target_type === 'tnv' && memberType === 'ctv') {
+      return res.status(403).json({
+        success: false,
+        message: 'Hoạt động này chỉ dành riêng cho Tình Nguyện Viên, Cộng Tác Viên không thể đăng ký!'
+      });
     }
 
     // Nếu không phải Admin thì chỉ được đăng ký cho nhóm của mình
@@ -277,7 +377,6 @@ router.post('/:id/register-group', requireAuth, async (req, res) => {
     const shiftInfoMap = new Map();
 
     if (Array.isArray(selectedMembers) && selectedMembers.length > 0) {
-      // Dạng chi tiết từng thành viên kèm kíp: [{ memberId, shiftId, shiftName }]
       const selectedIdSet = new Set(selectedMembers.map(item => Number(item.memberId)));
       membersToRegister = allGroupMembers.filter(m => selectedIdSet.has(m.id));
       for (const sm of selectedMembers) {
@@ -287,17 +386,19 @@ router.post('/:id/register-group', requireAuth, async (req, res) => {
         });
       }
     } else if (Array.isArray(memberIds) && memberIds.length > 0) {
-      // Dạng mảng ID: [id1, id2, ...]
       const selectedIdSet = new Set(memberIds.map(Number));
       membersToRegister = allGroupMembers.filter(m => selectedIdSet.has(m.id));
     } else {
-      // Nếu không gửi danh sách chọn: Mặc định đăng ký tất cả thành viên trong nhóm
       membersToRegister = allGroupMembers;
     }
 
     if (membersToRegister.length === 0) {
       return res.status(400).json({ success: false, message: 'Vui lòng chọn ít nhất một thành viên trong nhóm để đăng ký!' });
     }
+
+    const registrantTag = (camp.target_type === 'ctv' && memberType === 'tnv')
+      ? `${registeredBy || req.user.displayName || `Nhóm trưởng Nhóm ${gNum}`} (TNV hỗ trợ)`
+      : (registeredBy || req.user.displayName || `Nhóm trưởng Nhóm ${gNum}`);
 
     let newlyRegistered = 0;
     await db.transaction(async (txDb) => {
@@ -323,7 +424,7 @@ router.post('/:id/register-group', requireAuth, async (req, res) => {
             gNum,
             shiftDetail.shiftId,
             shiftDetail.shiftName,
-            registeredBy || req.user.displayName || `Nhóm trưởng Nhóm ${gNum}`
+            registrantTag
           ]);
           newlyRegistered++;
         }
@@ -443,6 +544,111 @@ router.put('/:id/attendance', requireAuth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi cập nhật điểm danh hoạt động', error: error.message });
+  }
+});
+
+// 8.1. ĐIỂM DANH HÀNG LOẠT (BULK ATTENDANCE)
+router.put('/:id/attendance-bulk', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { registrationIds, attendanceStatus } = req.body;
+
+    if (!Array.isArray(registrationIds) || registrationIds.length === 0 || !attendanceStatus) {
+      return res.status(400).json({ success: false, message: 'Danh sách thành viên hoặc trạng thái điểm danh không hợp lệ' });
+    }
+
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    const pointsDelta = camp.points || 10;
+    let updatedCount = 0;
+
+    await db.transaction(async (txDb) => {
+      for (const regId of registrationIds) {
+        const reg = await txDb.get('SELECT * FROM campaign_registrations WHERE id = ?', [Number(regId)]);
+        if (!reg) continue;
+
+        // Kiểm tra quyền hạn nếu là Nhóm trưởng
+        if (req.user.role !== 'admin') {
+          if (req.user.targetType !== reg.member_type || Number(req.user.groupNum) !== Number(reg.group_num)) {
+            continue; // Bỏ qua thành viên không thuộc nhóm mình
+          }
+        }
+
+        const previousAwarded = reg.points_awarded || 0;
+        let newAwarded = previousAwarded;
+
+        // Có mặt
+        if (attendanceStatus === 'co_mat' && previousAwarded === 0) {
+          newAwarded = pointsDelta;
+          if (reg.member_type === 'ctv') {
+            await txDb.run(`
+              UPDATE ctv_members 
+              SET activity_points = activity_points + ?, total_points = total_points + ? 
+              WHERE id = ?
+            `, [pointsDelta, pointsDelta, reg.member_id]);
+
+            await txDb.run(`
+              INSERT INTO ctv_point_logs (member_id, type, title, points_delta, note)
+              VALUES (?, 'activity', ?, ?, ?)
+            `, [reg.member_id, `Tham gia hoạt động: ${camp.name}`, pointsDelta, 'Điểm danh có mặt hàng loạt']);
+          } else {
+            await txDb.run(`
+              UPDATE tnv_members 
+              SET total_points = total_points + ? 
+              WHERE id = ?
+            `, [pointsDelta, reg.member_id]);
+
+            await txDb.run(`
+              INSERT INTO tnv_activities (member_id, category, points, note)
+              VALUES (?, ?, ?, ?)
+            `, [reg.member_id, 'Chiến dịch cao điểm', pointsDelta, `Tham gia hoạt động: ${camp.name}`]);
+          }
+        }
+        // Vắng hoặc Chưa điểm danh
+        else if (attendanceStatus !== 'co_mat' && previousAwarded > 0) {
+          newAwarded = 0;
+          if (reg.member_type === 'ctv') {
+            await txDb.run(`
+              UPDATE ctv_members 
+              SET activity_points = activity_points - ?, total_points = total_points - ? 
+              WHERE id = ?
+            `, [previousAwarded, previousAwarded, reg.member_id]);
+
+            await txDb.run(`
+              INSERT INTO ctv_point_logs (member_id, type, title, points_delta, note)
+              VALUES (?, 'activity', ?, ?, ?)
+            `, [reg.member_id, `Thu hồi điểm hoạt động: ${camp.name}`, -previousAwarded, 'Hủy điểm danh có mặt hàng loạt']);
+          } else {
+            await txDb.run(`
+              UPDATE tnv_members 
+              SET total_points = total_points - ? 
+              WHERE id = ?
+            `, [previousAwarded, reg.member_id]);
+
+            await txDb.run(`
+              INSERT INTO tnv_activities (member_id, category, points, note)
+              VALUES (?, ?, ?, ?)
+            `, [reg.member_id, 'Điều chỉnh điểm danh', -previousAwarded, `Hủy có mặt tại: ${camp.name}`]);
+          }
+        }
+
+        await txDb.run(`
+          UPDATE campaign_registrations 
+          SET attendance_status = ?, points_awarded = ? 
+          WHERE id = ?
+        `, [attendanceStatus, newAwarded, Number(regId)]);
+        updatedCount++;
+      }
+    });
+
+    res.json({
+      success: true,
+      message: `Đã cập nhật trạng thái điểm danh sang "${attendanceStatus === 'co_mat' ? 'Có mặt' : (attendanceStatus === 'vang' ? 'Vắng mặt' : 'Chưa điểm danh')}" cho ${updatedCount} thành viên!`,
+      updatedCount
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi điểm danh hàng loạt', error: error.message });
   }
 });
 

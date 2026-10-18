@@ -7,6 +7,7 @@ import fs from 'fs';
 import ctvRouter from './routes/ctv.js';
 import tnvRouter from './routes/tnv.js';
 import campaignsRouter from './routes/campaigns.js';
+import evaluationsRouter from './routes/evaluations.js';
 import authRouter from './routes/auth.js';
 import { requireAdmin } from './middleware/auth.js';
 import { db, initSchema } from './db/index.js';
@@ -27,6 +28,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/ctv', ctvRouter);
 app.use('/api/tnv', tnvRouter);
 app.use('/api/campaigns', campaignsRouter);
+app.use('/api/evaluations', evaluationsRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({

@@ -12,13 +12,14 @@ import {
   Shield,
   Crown,
   Eye,
-  UserCheck
+  UserCheck,
+  Settings
 } from 'lucide-react';
 import { api } from '../api';
 import { useToast } from './common/Toast';
 import { useAuth } from '../context/AuthContext';
 
-export default function Navbar({ activeTab, setActiveTab, onRefresh, stats }) {
+export default function Navbar({ activeTab, setActiveTab, onRefresh, stats, onOpenSettings }) {
   const { addToast } = useToast();
   const {
     user,
@@ -199,6 +200,15 @@ export default function Navbar({ activeTab, setActiveTab, onRefresh, stats }) {
                   >
                     <Key className="w-3.5 h-3.5 text-purple-600" />
                     <span>Cấp Lại MK</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+                    title="Cài đặt hệ thống & thang điểm đánh giá kỳ"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Cài Đặt</span>
                   </button>
                   <button
                     type="button"
