@@ -356,6 +356,31 @@ export const api = {
     return res.json();
   },
 
+  recordTnvActivity: async (data) => {
+    const res = await authFetch(`${API_BASE}/tnv/activities`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  updateTnvActivity: async (activityId, data) => {
+    const res = await authFetch(`${API_BASE}/tnv/activities/${activityId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  deleteTnvActivity: async (activityId) => {
+    const res = await authFetch(`${API_BASE}/tnv/activities/${activityId}`, {
+      method: 'DELETE',
+    });
+    return res.json();
+  },
+
   getTnvActivities: async (memberId) => {
     const res = await authFetch(`${API_BASE}/tnv/activities/${memberId}`);
     return res.json();

@@ -660,4 +660,69 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     await db.run('DELETE FROM tnv_members WHERE id IN (?, ?, ?, ?)', [tnv1.id, tnv2.id, tnv3.id, tnv4.id]);
     await db.run('DELETE FROM ctv_members WHERE id = ?', [ctv1.id]);
   });
+
+  it('Nghiệp vụ 5: Chỉnh sửa và Xóa thủ công bản ghi hoạt động TNV (kèm kiểm soát phân quyền)', async () => {
+    // 1. Tạo 1 TNV thuộc Nhóm 2
+    const mssvTest = `tnv_edit_test_${Date.now()}`;
+    const tnv = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, total_points, status)
+      VALUES (?, 'TNV Test Edit Delete', 2, 'Thành viên', 10, 'Đang hoạt động')
+      RETURNING *
+    `, [mssvTest]);
+
+    // 2. Tạo 1 bản ghi hoạt động 10đ
+    const act = await db.get(`
+      INSERT INTO tnv_activities (member_id, category, points, note)
+      VALUES (?, 'Hoạt động ban đầu', 10, 'Điểm ban đầu')
+      RETURNING *
+    `, [tnv.id]);
+
+    // Token cho Leader Nhóm 1 và Leader Nhóm 2
+    const leaderTokenG1 = generateTestToken({ role: 'leader', targetType: 'tnv', groupNum: 1, displayName: 'Leader G1' });
+    const leaderTokenG2 = generateTestToken({ role: 'leader', targetType: 'tnv', groupNum: 2, displayName: 'Leader G2' });
+
+    // 3. Leader Nhóm 1 cố gắng sửa hoạt động của TNV Nhóm 2 -> 403 Forbidden
+    const forbiddenEditRes = await request(app)
+      .put(`/api/tnv/activities/${act.id}`)
+      .set('Authorization', `Bearer ${leaderTokenG1}`)
+      .send({ category: 'Hack điểm', points: 99, note: 'Lỗi' });
+    expect(forbiddenEditRes.status).toBe(403);
+
+    // 4. Leader Nhóm 2 (đúng nhóm) sửa hoạt động thành 25đ -> 200 OK
+    const successEditRes = await request(app)
+      .put(`/api/tnv/activities/${act.id}`)
+      .set('Authorization', `Bearer ${leaderTokenG2}`)
+      .send({ category: 'Hoạt động đã sửa', points: 25, note: 'Nhóm trưởng đã sửa' });
+    expect(successEditRes.status).toBe(200);
+    expect(successEditRes.body.success).toBe(true);
+    expect(successEditRes.body.newTotal).toBe(25);
+
+    // Kiểm tra DB: TNV total_points đã cập nhật thành 25
+    const updatedTnv = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [tnv.id]);
+    expect(updatedTnv.total_points).toBe(25);
+
+    // 5. Leader Nhóm 1 cố gắng xóa hoạt động của TNV Nhóm 2 -> 403 Forbidden
+    const forbiddenDeleteRes = await request(app)
+      .delete(`/api/tnv/activities/${act.id}`)
+      .set('Authorization', `Bearer ${leaderTokenG1}`);
+    expect(forbiddenDeleteRes.status).toBe(403);
+
+    // 6. Admin xóa bản ghi hoạt động -> 200 OK, total_points trở về 0
+    const successDeleteRes = await request(app)
+      .delete(`/api/tnv/activities/${act.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(successDeleteRes.status).toBe(200);
+    expect(successDeleteRes.body.success).toBe(true);
+    expect(successDeleteRes.body.newTotal).toBe(0);
+
+    // Kiểm tra DB: bản ghi activity đã bị xóa, total_points TNV là 0
+    const deletedAct = await db.get('SELECT * FROM tnv_activities WHERE id = ?', [act.id]);
+    expect(deletedAct).toBeFalsy();
+    const finalTnv = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [tnv.id]);
+    expect(finalTnv.total_points).toBe(0);
+
+    // Cleanup
+    await db.run('DELETE FROM tnv_members WHERE id = ?', [tnv.id]);
+  });
 });
+

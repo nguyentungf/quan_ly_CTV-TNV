@@ -540,6 +540,120 @@ router.get('/activities/:memberId', async (req, res) => {
   }
 });
 
+// 17.1. Chỉnh sửa thủ công bản ghi hoạt động TNV
+router.put('/activities/:activityId', requireAuth, async (req, res) => {
+  try {
+    const { activityId } = req.params;
+    const { category, points, note } = req.body;
+
+    const activity = await db.get('SELECT * FROM tnv_activities WHERE id = ?', [Number(activityId)]);
+    if (!activity) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy bản ghi hoạt động' });
+    }
+
+    const member = await db.get('SELECT * FROM tnv_members WHERE id = ?', [activity.member_id]);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy TNV của hoạt động này' });
+    }
+
+    // Kiểm tra phân quyền: Admin toàn quyền; Nhóm trưởng chỉ được sửa thành viên nhóm mình
+    if (req.user.role !== 'admin') {
+      if (req.user.targetType !== 'tnv' || Number(req.user.groupNum) !== Number(member.group_num)) {
+        return res.status(403).json({
+          success: false,
+          message: `Thành viên này thuộc Nhóm ${member.group_num}. Bạn chỉ có quyền quản lý Nhóm ${req.user.groupNum}!`
+        });
+      }
+    }
+
+    const newCategory = category !== undefined ? String(category).trim() : activity.category;
+    const newPoints = points !== undefined ? Number(points) : activity.points;
+    const newNote = note !== undefined ? String(note).trim() : (activity.note || '');
+
+    if (isNaN(newPoints)) {
+      return res.status(400).json({ success: false, message: 'Điểm số phải là một số hợp lệ' });
+    }
+
+    await db.transaction(async (txDb) => {
+      await txDb.run(`
+        UPDATE tnv_activities 
+        SET category = ?, points = ?, note = ?
+        WHERE id = ?
+      `, [newCategory, newPoints, newNote, Number(activityId)]);
+
+      await txDb.run(`
+        UPDATE tnv_members 
+        SET total_points = (SELECT COALESCE(SUM(points), 0) FROM tnv_activities WHERE member_id = ?)
+        WHERE id = ?
+      `, [member.id, member.id]);
+    });
+
+    const updatedTotal = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [member.id]);
+
+    res.json({
+      success: true,
+      message: `Đã cập nhật hoạt động thành công!`,
+      data: {
+        id: Number(activityId),
+        member_id: member.id,
+        category: newCategory,
+        points: newPoints,
+        note: newNote
+      },
+      newTotal: updatedTotal?.total_points || 0
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi cập nhật hoạt động TNV', error: error.message });
+  }
+});
+
+// 17.2. Xóa thủ công bản ghi hoạt động TNV
+router.delete('/activities/:activityId', requireAuth, async (req, res) => {
+  try {
+    const { activityId } = req.params;
+
+    const activity = await db.get('SELECT * FROM tnv_activities WHERE id = ?', [Number(activityId)]);
+    if (!activity) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy bản ghi hoạt động' });
+    }
+
+    const member = await db.get('SELECT * FROM tnv_members WHERE id = ?', [activity.member_id]);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy TNV của hoạt động này' });
+    }
+
+    // Kiểm tra phân quyền: Admin toàn quyền; Nhóm trưởng chỉ được xóa thành viên nhóm mình
+    if (req.user.role !== 'admin') {
+      if (req.user.targetType !== 'tnv' || Number(req.user.groupNum) !== Number(member.group_num)) {
+        return res.status(403).json({
+          success: false,
+          message: `Thành viên này thuộc Nhóm ${member.group_num}. Bạn chỉ có quyền quản lý Nhóm ${req.user.groupNum}!`
+        });
+      }
+    }
+
+    await db.transaction(async (txDb) => {
+      await txDb.run('DELETE FROM tnv_activities WHERE id = ?', [Number(activityId)]);
+
+      await txDb.run(`
+        UPDATE tnv_members 
+        SET total_points = (SELECT COALESCE(SUM(points), 0) FROM tnv_activities WHERE member_id = ?)
+        WHERE id = ?
+      `, [member.id, member.id]);
+    });
+
+    const updatedTotal = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [member.id]);
+
+    res.json({
+      success: true,
+      message: `Đã xóa bản ghi hoạt động "${activity.category}"!`,
+      newTotal: updatedTotal?.total_points || 0
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi xóa hoạt động TNV', error: error.message });
+  }
+});
+
 // Helper: Lấy dữ liệu mảng TNV chuẩn theo hình ảnh mẫu
 async function getExportTnvRows() {
   const activeMembers = await db.all(`
