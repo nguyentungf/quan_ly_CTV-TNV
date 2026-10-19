@@ -71,13 +71,6 @@ export default function CtvOverview({ groups = [], selectedGroup, onSelectGroup 
                 </div>
               )}
 
-              {/* Stats Footer */}
-              <div className={`mt-2 pt-1.5 border-t flex items-center justify-between text-[11px] font-medium ${
-                isSelected ? 'border-white/20 text-blue-100' : 'border-slate-100 text-slate-500'
-              }`}>
-                <span>Điểm TB:</span>
-                <span className="font-bold">{g.avgPoints}đ</span>
-              </div>
             </div>
           );
         })}
