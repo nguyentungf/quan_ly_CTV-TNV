@@ -845,31 +845,38 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
       }
 
       // Xử lý bảo toàn điểm số hoạt động của CTV khi chuyển thành TNV:
-      // 1. Đọc điểm hoạt động từ file Excel (nếu có)
+      // 1. Kiểm tra và đọc điểm hoạt động trực tiếp từ file Excel
+      let hasPointsInFile = false;
       let pointsFromFile = 0;
-      if (colActivityPoints !== -1 && row[colActivityPoints] !== undefined && row[colActivityPoints] !== '') {
+
+      if (colActivityPoints !== -1 && row[colActivityPoints] !== undefined && String(row[colActivityPoints]).trim() !== '') {
+        hasPointsInFile = true;
         const parsed = Number(row[colActivityPoints]);
-        if (!isNaN(parsed)) pointsFromFile = Math.round(parsed);
-      } else if (colTotalPoints !== -1 && row[colTotalPoints] !== undefined && row[colTotalPoints] !== '') {
+        pointsFromFile = !isNaN(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+      } else if (colTotalPoints !== -1 && row[colTotalPoints] !== undefined && String(row[colTotalPoints]).trim() !== '') {
+        hasPointsInFile = true;
         const parsed = Number(row[colTotalPoints]);
-        if (!isNaN(parsed)) pointsFromFile = Math.round(parsed);
+        pointsFromFile = !isNaN(parsed) ? Math.max(0, Math.round(parsed)) : 0;
       }
 
       try {
-        // 2. Tra cứu CTV trong DB nếu đã có dữ liệu trước đó để bảo toàn điểm hoạt động chính xác
-        const ctvInDb = await db.get(`
-          SELECT m.id, m.full_name, m.activity_points, m.total_points,
-            COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id AND type = 'activity'), m.activity_points) as db_activity_points
-          FROM ctv_members m
-          WHERE m.mssv = ?
-        `, [mssv]);
-
-        // Ưu tiên điểm từ file nếu > 0; nếu file = 0 thì lấy từ dữ liệu hoạt động CTV trong DB
         let preservedPoints = 0;
-        if (pointsFromFile > 0) {
+
+        if (hasPointsInFile) {
+          // File Excel ĐÃ CÓ số liệu (kể cả 0 điểm): Luôn lấy chính xác theo file Excel của người dùng, tuyệt đối không tự ý lấy số liệu khác
           preservedPoints = pointsFromFile;
-        } else if (ctvInDb) {
-          preservedPoints = Math.max(0, Number(ctvInDb.db_activity_points || ctvInDb.activity_points || 0));
+        } else {
+          // Chỉ khi file Excel hoàn toàn KHÔNG CÓ cột điểm hoạt động, mới tra cứu từ dữ liệu CTV cũ trong DB
+          const ctvInDb = await db.get(`
+            SELECT m.id, m.full_name, m.activity_points, m.total_points,
+              COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id AND type = 'activity'), m.activity_points) as db_activity_points
+            FROM ctv_members m
+            WHERE m.mssv = ?
+          `, [mssv]);
+
+          if (ctvInDb) {
+            preservedPoints = Math.max(0, Number(ctvInDb.db_activity_points || ctvInDb.activity_points || 0));
+          }
         }
 
         let tnvId;
@@ -892,7 +899,7 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
           importedCount++;
         }
 
-        // 3. Ghi nhận bảo toàn điểm số vào bảng hoạt động tnv_activities để hệ thống TNV cộng dồn chuẩn xác
+        // 3. Ghi nhận bảo toàn điểm số vào bảng hoạt động tnv_activities:
         if (preservedPoints > 0) {
           const existingLog = await db.get(`
             SELECT id FROM tnv_activities 
@@ -912,6 +919,12 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
             `, [tnvId, preservedPoints, `Bảo toàn điểm số hoạt động từ thời CTV (${preservedPoints}đ)`]);
           }
           preservedPointsCount++;
+        } else {
+          // Nếu điểm hoạt động trong file là 0, dọn sạch bản ghi bảo lưu cũ (nếu có) để không bị sai lệch điểm
+          await db.run(`
+            DELETE FROM tnv_activities 
+            WHERE member_id = ? AND category = 'Bảo lưu điểm CTV'
+          `, [tnvId]);
         }
 
         // Đồng bộ lại total_points của TNV từ bảng tnv_activities

@@ -533,6 +533,7 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     `, [mssvCtv1]);
 
     // Tạo file Excel giả lập có đúng cấu trúc 13 cột như file D:\Danh_sach_CTV_Dang_hoat_dong.xlsx
+    const mssvCtv3 = `test_ctv_to_tnv_${Date.now()}_3`;
     const sampleRows = [
       {
         'Nhóm trưởng': 'Nguyễn Quang Tùng',
@@ -563,6 +564,21 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
         'Điểm thái độ': 10,
         'Điểm hoạt động': 40,
         'Tổng điểm': 50
+      },
+      {
+        'Nhóm trưởng': 'Nguyễn Quang Tùng',
+        'STT': 3,
+        'Nhóm': 'Nhóm 1',
+        'Họ và tên': 'Tạ Thanh Tùng',
+        'MSSV': mssvCtv3,
+        'Giới tính': 'Nam',
+        'Số điện thoại': '0376800137',
+        'Lớp': 'ETTN - 02',
+        'Email': 'tung.tt@sis.hust.edu.vn',
+        'Chức vụ': 'Thành viên',
+        'Điểm thái độ': 5,
+        'Điểm hoạt động': 0, // Điểm hoạt động trong file là 0 -> Không được tự ý bịa hoặc đè số điểm khác
+        'Tổng điểm': 5
       }
     ];
 
@@ -579,7 +595,7 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
 
     expect(importRes.status).toBe(200);
     expect(importRes.body.success).toBe(true);
-    expect(importRes.body.importedCount).toBe(2);
+    expect(importRes.body.importedCount).toBe(3);
     expect(importRes.body.preservedPointsCount).toBe(2);
 
     // 3. Kiểm tra TNV 1 sau khi import:
@@ -602,16 +618,19 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     expect(tnv2).toBeDefined();
     expect(tnv2.total_points).toBe(40); // Điểm hoạt động bảo toàn là 40đ
 
-    const activityLog2 = await db.get(
+    // 5. Kiểm tra TNV 3 (Tạ Thanh Tùng có điểm hoạt động = 0):
+    const tnv3 = await db.get('SELECT * FROM tnv_members WHERE mssv = ?', [mssvCtv3]);
+    expect(tnv3).toBeDefined();
+    expect(tnv3.total_points).toBe(0); // Tuyệt đối là 0 điểm, không có log bảo lưu nào
+    const activityLog3 = await db.get(
       "SELECT * FROM tnv_activities WHERE member_id = ? AND category = 'Bảo lưu điểm CTV'",
-      [tnv2.id]
+      [tnv3.id]
     );
-    expect(activityLog2).toBeDefined();
-    expect(activityLog2.points).toBe(40);
+    expect(activityLog3).toBeFalsy();
 
     // Cleanup
-    await db.run('DELETE FROM tnv_activities WHERE member_id IN (?, ?)', [tnv1.id, tnv2.id]);
-    await db.run('DELETE FROM tnv_members WHERE id IN (?, ?)', [tnv1.id, tnv2.id]);
+    await db.run('DELETE FROM tnv_activities WHERE member_id IN (?, ?, ?)', [tnv1.id, tnv2.id, tnv3.id]);
+    await db.run('DELETE FROM tnv_members WHERE id IN (?, ?, ?)', [tnv1.id, tnv2.id, tnv3.id]);
     await db.run('DELETE FROM ctv_members WHERE id = ?', [ctv1.id]);
   });
 });
