@@ -59,9 +59,9 @@ router.post('/rubric', requireAdmin, async (req, res) => {
 
     const rubricStr = JSON.stringify(newRubric);
     await db.run(`
-      INSERT INTO system_settings (key, value, updated_at)
+      INSERT INTO system_settings ("key", value, updated_at)
       VALUES ('evaluation_rubric', ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+      ON CONFLICT("key") DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
     `, [rubricStr]);
 
     res.json({

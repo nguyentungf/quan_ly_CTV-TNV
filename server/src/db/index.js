@@ -85,11 +85,26 @@ export const db = {
     const flatParams = Array.isArray(params) ? params : [params];
     if (isPostgres) {
       let pgQuery = toPgSql(sqlStr);
-      const isInsert = /^\s*INSERT\s+INTO/i.test(pgQuery);
-      if (isInsert && !/RETURNING/i.test(pgQuery)) {
+      const isInsertMatch = /^\s*INSERT\s+INTO\s+([^\s(]+)/i.exec(pgQuery);
+      const tableName = isInsertMatch ? isInsertMatch[1].toLowerCase().replace(/['"`]/g, '') : '';
+      const tablesWithoutId = ['system_settings', 'ctv_attendance', 'tnv_attendance'];
+
+      if (isInsertMatch && !/RETURNING/i.test(pgQuery) && !tablesWithoutId.includes(tableName)) {
         pgQuery += ' RETURNING id';
       }
-      const res = await pool.query(pgQuery, flatParams);
+
+      let res;
+      try {
+        res = await pool.query(pgQuery, flatParams);
+      } catch (err) {
+        // Nếu câu lệnh thất bại do bảng không có cột 'id', thực thi lại câu lệnh gốc không kèm RETURNING id
+        if (err.message && err.message.includes('column "id" does not exist')) {
+          res = await pool.query(toPgSql(sqlStr), flatParams);
+        } else {
+          throw err;
+        }
+      }
+
       const lastInsertRowid = res.rows?.[0]?.id || null;
       return {
         changes: res.rowCount,
@@ -142,8 +157,25 @@ export const db = {
           get: async (s, p = []) => (await client.query(toPgSql(s), Array.isArray(p) ? p : [p])).rows[0] || null,
           run: async (s, p = []) => {
             let ps = toPgSql(s);
-            if (/^\s*INSERT\s+INTO/i.test(ps) && !/RETURNING/i.test(ps)) ps += ' RETURNING id';
-            const r = await client.query(ps, Array.isArray(p) ? p : [p]);
+            const flatP = Array.isArray(p) ? p : [p];
+            const isInsertMatch = /^\s*INSERT\s+INTO\s+([^\s(]+)/i.exec(ps);
+            const tableName = isInsertMatch ? isInsertMatch[1].toLowerCase().replace(/['"`]/g, '') : '';
+            const tablesWithoutId = ['system_settings', 'ctv_attendance', 'tnv_attendance'];
+
+            if (isInsertMatch && !/RETURNING/i.test(ps) && !tablesWithoutId.includes(tableName)) {
+              ps += ' RETURNING id';
+            }
+
+            let r;
+            try {
+              r = await client.query(ps, flatP);
+            } catch (err) {
+              if (err.message && err.message.includes('column "id" does not exist')) {
+                r = await client.query(toPgSql(s), flatP);
+              } else {
+                throw err;
+              }
+            }
             return { changes: r.rowCount, lastInsertRowid: r.rows?.[0]?.id || null };
           },
           prepare: (s) => ({
