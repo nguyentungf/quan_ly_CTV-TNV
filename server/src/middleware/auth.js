@@ -67,6 +67,13 @@ export function checkGroupPermission(expectedTargetType) {
 
         const userGroup = Number(req.user.groupNum);
 
+        // Khi tạo mới (POST /members): Ép cứng groupNum = Number(req.user.groupNum), bỏ qua req.body.groupNum từ client
+        if (req.user.role === 'leader' && req.method === 'POST' && req.path === '/members') {
+          if (req.body) {
+            req.body.groupNum = userGroup;
+          }
+        }
+
         // 1. Kiểm tra groupNum truyền trực tiếp trong body hoặc query
         let reqGroup = req.body?.groupNum || req.body?.targetGroup || req.query?.group;
         if (reqGroup && reqGroup !== 'all') {

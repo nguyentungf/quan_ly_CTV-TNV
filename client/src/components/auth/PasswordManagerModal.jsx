@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 import { api } from '../../api';
 import { X, Key, Shield, Copy, Check, RotateCcw, Save, AlertCircle, Sparkles } from 'lucide-react';
 
@@ -34,14 +35,11 @@ export default function PasswordManagerModal() {
     }
   };
 
+  useLockBodyScroll(isPasswordModalOpen && isAdmin);
+
   useEffect(() => {
     if (isPasswordModalOpen && isAdmin) {
       loadPasswords();
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
     }
   }, [isPasswordModalOpen, isAdmin]);
 

@@ -4,6 +4,7 @@ import { Calendar, Plus, Trash2, CheckCircle2, Clock, FileCheck, XCircle, AlertC
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
 import { useAuth } from '../../context/AuthContext';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function CtvAttendanceMatrix({ selectedGroup }) {
   const { addToast } = useToast();
@@ -15,15 +16,7 @@ export default function CtvAttendanceMatrix({ selectedGroup }) {
   const [newEventName, setNewEventName] = useState('');
   const [newEventDate, setNewEventDate] = useState(new Date().toISOString().split('T')[0]);
 
-  useEffect(() => {
-    if (showAddEventModal) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [showAddEventModal]);
+  useLockBodyScroll(showAddEventModal);
 
   useEffect(() => {
     loadMatrix();

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Settings, Sliders, Award, CheckCircle, X, RotateCcw, AlertTriangle } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 const DEFAULT_RUBRIC = {
   attendanceWeight: 30,
@@ -19,14 +20,11 @@ export default function SettingsModal({ isOpen, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  useLockBodyScroll(isOpen);
+
   useEffect(() => {
     if (isOpen) {
       loadRubric();
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
     }
   }, [isOpen]);
 

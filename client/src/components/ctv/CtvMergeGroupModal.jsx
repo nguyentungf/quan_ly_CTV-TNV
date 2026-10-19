@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, GitMerge, ArrowRight, AlertTriangle, ShieldCheck, History, Users } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function CtvMergeGroupModal({
   isOpen,
@@ -18,14 +19,11 @@ export default function CtvMergeGroupModal({
   const [auditLogs, setAuditLogs] = useState([]);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  useLockBodyScroll(isOpen);
+
   useEffect(() => {
     if (isOpen) {
       loadAuditLogs();
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
     }
   }, [isOpen]);
 

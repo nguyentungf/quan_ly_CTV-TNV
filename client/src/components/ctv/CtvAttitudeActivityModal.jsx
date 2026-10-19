@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Award, Smile, Frown, AlertOctagon, Sparkles, History, PlusCircle, CheckCircle } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function CtvAttitudeActivityModal({
   isOpen,
@@ -44,15 +45,7 @@ export default function CtvAttitudeActivityModal({
     }
   };
 
-  useEffect(() => {
-    if (isOpen && member) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isOpen, member]);
+  useLockBodyScroll(Boolean(isOpen && member));
 
   if (!isOpen || !member) return null;
 

@@ -8,6 +8,7 @@ import ctvRouter from '../../src/routes/ctv.js';
 import tnvRouter from '../../src/routes/tnv.js';
 import campaignsRouter from '../../src/routes/campaigns.js';
 import authRouter from '../../src/routes/auth.js';
+import evaluationsRouter from '../../src/routes/evaluations.js';
 
 describe('Audit: Security & Access Control Vulnerabilities', () => {
   let app;
@@ -20,6 +21,7 @@ describe('Audit: Security & Access Control Vulnerabilities', () => {
     app.use('/api/ctv', ctvRouter);
     app.use('/api/tnv', tnvRouter);
     app.use('/api/campaigns', campaignsRouter);
+    app.use('/api/evaluations', evaluationsRouter);
 
     leaderToken = generateTestToken({
       role: 'leader',
@@ -114,6 +116,114 @@ describe('Audit: Security & Access Control Vulnerabilities', () => {
     // Systems should rate limit brute-force login attempts
     // In current buggy code: Zero rate limiting, all 30 return 401
     expect(rateLimited.length, 'No rate limiting protection on login endpoint').toBeGreaterThan(0);
+  });
+
+  it('SEC-IDOR-01: Leader creating member with another groupNum is forced to their own groupNum', async () => {
+    const testMssv = `SEC_IDOR_${Date.now()}`;
+    const res = await request(app)
+      .post('/api/tnv/members')
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({
+        mssv: testMssv,
+        fullName: 'IDOR Creation Test Target',
+        groupNum: 3 // Leader is group 1, attempts to create into group 3
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.group_num).toBe(1); // Forced to Leader's groupNum 1
+  });
+
+  it('SEC-IDOR-02: Leader attempting to edit or delete cross-group member is rejected with 403 Forbidden', async () => {
+    // 1. Create a member belonging to Group 2
+    const targetMssv = `SEC_G2_${Date.now()}`;
+    const memberG2 = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, status)
+      VALUES (?, 'Group 2 Cross-Group Target', 2, 'Thành viên', 'Đang hoạt động')
+      RETURNING *
+    `, [targetMssv]);
+
+    // 2. Leader of Group 1 attempts to PUT member of Group 2 -> 403 Forbidden
+    const putRes = await request(app)
+      .put(`/api/tnv/members/${memberG2.id}`)
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({
+        fullName: 'Hacked Name',
+        groupNum: 1
+      });
+    expect(putRes.status).toBe(403);
+    expect(putRes.body.success).toBe(false);
+
+    // 3. Leader of Group 1 attempts to DELETE member of Group 2 -> 403 Forbidden
+    const delRes = await request(app)
+      .delete(`/api/tnv/members/${memberG2.id}`)
+      .set('Authorization', `Bearer ${leaderToken}`);
+    expect(delRes.status).toBe(403);
+    expect(delRes.body.success).toBe(false);
+  });
+
+  it('SEC-IDOR-03: Leader attempting to register campaign for cross-group member is rejected with 403 Forbidden', async () => {
+    // 1. Create campaign
+    const camp = await db.get(`
+      INSERT INTO campaigns (name, description, location, event_date, points, target_type, status)
+      VALUES ('SEC Campaign', 'Test', 'Hanoi', '2026-11-01', 10, 'tnv', 'dang_mo_dang_ky')
+      RETURNING id
+    `);
+
+    // 2. Create Group 2 member
+    const g2Member = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, status)
+      VALUES (?, 'G2 Cam Target', 2, 'Thành viên', 'Đang hoạt động')
+      RETURNING id
+    `, [`SEC_CAM_${Date.now()}`]);
+
+    // 3. Leader of Group 1 attempts register-group with Group 2 memberId -> 403 Forbidden
+    const regRes = await request(app)
+      .post(`/api/campaigns/${camp.id}/register-group`)
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({
+        memberType: 'tnv',
+        groupNum: 1,
+        memberIds: [g2Member.id]
+      });
+    expect(regRes.status).toBe(403);
+    expect(regRes.body.message).toContain('Phát hiện thao tác trái phép');
+  });
+
+  it('SEC-IDOR-04: Leader attempting to override manual attendance/activity scores in grade-draft is prevented', async () => {
+    // 1. Create member in Leader's group (Group 1)
+    const g1Member = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, status, total_points)
+      VALUES (?, 'G1 Eval Target', 1, 'Thành viên', 'Đang hoạt động', 0)
+      RETURNING id
+    `, [`SEC_EVAL_${Date.now()}`]);
+
+    // 2. Leader submits draft attempting to inject 9999 attendance and activity points
+    const draftRes = await request(app)
+      .post('/api/evaluations/grade-draft')
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({
+        period: 'midterm',
+        memberType: 'tnv',
+        evaluations: [{
+          memberId: g1Member.id,
+          attendanceScore: 9999, // Forged manual attendance score
+          activityScore: 9999,   // Forged manual activity score
+          qualitativeScore: 10,
+          notes: 'Legit qualitative score'
+        }]
+      });
+
+    expect(draftRes.status).toBe(200);
+
+    // 3. Verify in DB: Attendance & Activity scores were NOT overwritten by forged values!
+    const savedEval = await db.get(
+      'SELECT attendance_score, activity_score, qualitative_score FROM evaluations WHERE period = ? AND member_type = ? AND member_id = ?',
+      ['midterm', 'tnv', g1Member.id]
+    );
+    expect(savedEval.attendance_score).not.toBe(9999);
+    expect(savedEval.activity_score).not.toBe(9999);
+    expect(savedEval.qualitative_score).toBe(10);
   });
 });
 

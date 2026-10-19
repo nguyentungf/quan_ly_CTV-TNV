@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { UploadCloud, FileSpreadsheet, Download, X, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import { useToast } from './Toast';
 import { api } from '../../api';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function CsvImportModal({
   isOpen,
@@ -16,15 +17,7 @@ export default function CsvImportModal({
   const [errors, setErrors] = useState([]);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isOpen]);
+  useLockBodyScroll(isOpen);
 
   if (!isOpen) return null;
 
@@ -119,22 +112,34 @@ export default function CsvImportModal({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <a
-                href={sampleXlsxUrl}
-                download={sampleXlsxFilename}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-100 hover:bg-emerald-200/80 transition-colors shadow-sm"
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await api.downloadFile(sampleXlsxUrl, sampleXlsxFilename);
+                  } catch (err) {
+                    addToast(err.message || 'Không thể tải tệp mẫu Excel', 'error');
+                  }
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-100 hover:bg-emerald-200/80 transition-colors shadow-sm cursor-pointer"
               >
-                <Download className="w-3.5 h-3.5" />
+                <Download className="w-3.5 h-3.5"/>
                 Tải mẫu Excel (.xlsx)
-              </a>
-              <a
-                href={sampleCsvUrl}
-                download={sampleCsvFilename}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200/80 transition-colors shadow-sm"
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await api.downloadFile(sampleCsvUrl, sampleCsvFilename);
+                  } catch (err) {
+                    addToast(err.message || 'Không thể tải tệp mẫu CSV', 'error');
+                  }
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200/80 transition-colors shadow-sm cursor-pointer"
               >
-                <Download className="w-3.5 h-3.5" />
+                <Download className="w-3.5 h-3.5"/>
                 Tải mẫu CSV (.csv)
-              </a>
+              </button>
             </div>
           </div>
 

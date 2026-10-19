@@ -69,9 +69,17 @@ router.get('/members', async (req, res) => {
 router.post('/members', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { mssv, fullName, groupNum, role, gender, className, phone, email, status } = req.body;
-    if (!mssv || !fullName || !groupNum) {
+    if (!mssv || !fullName || (!groupNum && req.user.role !== 'leader')) {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin bắt buộc: MSSV, Họ tên hoặc Nhóm' });
     }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'tnv') {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+    }
+
+    const effectiveGroupNum = req.user.role === 'leader' ? Number(req.user.groupNum) : Number(groupNum);
 
     const newMember = await db.get(`
       INSERT INTO tnv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, total_points, status, warning_level, warning_note)
@@ -80,7 +88,7 @@ router.post('/members', checkGroupPermission('tnv'), async (req, res) => {
     `, [
       mssv.trim(),
       fullName.trim(),
-      Number(groupNum),
+      effectiveGroupNum,
       role || 'Thành viên',
       gender || 'Nam',
       className?.trim() || '',
@@ -104,13 +112,26 @@ router.put('/members/:id', checkGroupPermission('tnv'), async (req, res) => {
     const { id } = req.params;
     const { fullName, groupNum, role, gender, className, phone, email, status } = req.body;
 
+    const member = await db.get('SELECT * FROM tnv_members WHERE id = ?', [Number(id)]);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy TNV' });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'tnv' || Number(member.group_num) !== Number(req.user.groupNum)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+    }
+
+    const effectiveGroupNum = req.user.role === 'leader' ? Number(member.group_num) : Number(groupNum || member.group_num);
+
     await db.run(`
       UPDATE tnv_members 
       SET full_name = ?, group_num = ?, role = ?, gender = ?, class_name = ?, phone = ?, email = ?, status = ?
       WHERE id = ?
     `, [
       fullName?.trim(),
-      Number(groupNum),
+      effectiveGroupNum,
       role || 'Thành viên',
       gender || 'Nam',
       className?.trim() || '',
@@ -130,6 +151,17 @@ router.put('/members/:id', checkGroupPermission('tnv'), async (req, res) => {
 router.delete('/members/:id', checkGroupPermission('tnv'), async (req, res) => {
   try {
     const { id } = req.params;
+    const member = await db.get('SELECT * FROM tnv_members WHERE id = ?', [Number(id)]);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy TNV' });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'tnv' || Number(member.group_num) !== Number(req.user.groupNum)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+    }
+
     await db.run('DELETE FROM tnv_members WHERE id = ?', [Number(id)]);
     res.json({ success: true, message: 'Đã xóa TNV thành công' });
   } catch (error) {
@@ -158,6 +190,22 @@ router.post('/bulk-action', checkGroupPermission('tnv'), async (req, res) => {
         success: false,
         message: 'Thao tác này chỉ dành riêng cho Ban Chủ Nhiệm (Admin)!'
       });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'tnv') {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+      if (action === 'change_group') {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+      const otherGroupMembers = await db.all(
+        `SELECT id FROM tnv_members WHERE id IN (${placeholders}) AND group_num != ?`,
+        [...ids, Number(req.user.groupNum)]
+      );
+      if (otherGroupMembers.length > 0) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
     }
 
     if (action === 'change_status') {
@@ -467,6 +515,17 @@ router.post('/attendance', checkGroupPermission('tnv'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin điểm danh' });
     }
 
+    const member = await db.get('SELECT * FROM tnv_members WHERE id = ?', [Number(memberId)]);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy TNV' });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'tnv' || Number(member.group_num) !== Number(req.user.groupNum)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+    }
+
     // Chuẩn hóa trạng thái về 3 giá trị duy nhất: 'tham_gia', 'co_phep', 'khong_phep'
     let normStatus = status;
     if (status === 'co_mat') normStatus = 'tham_gia';
@@ -505,6 +564,12 @@ router.post('/activities', checkGroupPermission('tnv'), async (req, res) => {
     const member = await db.get('SELECT * FROM tnv_members WHERE id = ?', [Number(memberId)]);
     if (!member) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy TNV' });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'tnv' || Number(member.group_num) !== Number(req.user.groupNum)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
     }
 
     const delta = Number(points);

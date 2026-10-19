@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Award,
@@ -20,6 +20,7 @@ import {
 import { api } from '../../api';
 import { useToast } from './Toast';
 import { useAuth } from '../../context/AuthContext';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function EvaluationManagerModal({
   isOpen,
@@ -109,15 +110,21 @@ export default function EvaluationManagerModal({
     }
   };
 
-  useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isOpen]);
+  useLockBodyScroll(isOpen);
+
+  const selectedEvalSet = useMemo(() => new Set(selectedEvalMemberIds), [selectedEvalMemberIds]);
+
+  const selectableMembers = useMemo(() => {
+    return evalList.filter(item => {
+      if (isAdmin) return true;
+      if (isLeader && user?.targetType === memberType && Number(user?.groupNum) === Number(item.member.group_num)) {
+        return true;
+      }
+      return false;
+    });
+  }, [evalList, isAdmin, isLeader, user?.targetType, user?.groupNum, memberType]);
+
+  const getSelectableMembers = () => selectableMembers;
 
   if (!isOpen) return null;
 
@@ -132,17 +139,6 @@ export default function EvaluationManagerModal({
         [field]: value
       }
     }));
-  };
-
-  // Lấy danh sách thành viên có quyền sửa trong danh sách hiện tại
-  const getSelectableMembers = () => {
-    return evalList.filter(item => {
-      if (isAdmin) return true;
-      if (isLeader && user?.targetType === memberType && Number(user?.groupNum) === Number(item.member.group_num)) {
-        return true;
-      }
-      return false;
-    });
   };
 
   // Chọn tất cả thành viên có quyền sửa
@@ -267,16 +263,17 @@ export default function EvaluationManagerModal({
     return { attScore, actScore, qScore, totalScore, rank, notes: draft.notes || '' };
   };
 
-  // 1. Lưu bản nháp (Nhóm trưởng / Admin)
-  const handleSaveDraft = async () => {
+  // 1. Lưu bản nháp (Nhóm trưởng / Admin) - Trả về boolean để kiểm tra tính toàn vẹn
+  const handleSaveDraft = async ({ silentReload = false } = {}) => {
     setSaving(true);
     try {
-      const payloadEvals = evalList.map(item => {
+      const selectableMembers = getSelectableMembers();
+      const payloadEvals = selectableMembers.map(item => {
         const current = calculateCurrentRow(item);
         return {
           memberId: item.member.id,
-          attendanceScore: current.attScore,
-          activityScore: current.actScore,
+          attendanceScore: isAdmin ? current.attScore : item.attendanceScore,
+          activityScore: isAdmin ? current.actScore : item.activityScore,
           qualitativeScore: current.qScore,
           notes: current.notes,
           rankGrade: current.rank
@@ -290,15 +287,20 @@ export default function EvaluationManagerModal({
       });
 
       if (res.success) {
-        addToast(res.message, 'success');
-        loadEvaluationData();
-        onSuccess?.();
-        onSaved?.();
+        if (!silentReload) {
+          addToast(res.message, 'success');
+          await loadEvaluationData();
+          onSuccess?.();
+          onSaved?.();
+        }
+        return true;
       } else {
         addToast(res.message || 'Lỗi khi lưu bản nháp', 'error');
+        return false;
       }
     } catch (err) {
-      addToast('Lỗi kết nối máy chủ', 'error');
+      addToast('Lỗi kết nối máy chủ khi lưu bản nháp', 'error');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -310,8 +312,12 @@ export default function EvaluationManagerModal({
       return;
     }
 
-    // Tự động lưu nháp trước khi chốt
-    await handleSaveDraft();
+    // Bắt buộc lưu nháp thành công mới được phép khóa sổ
+    const draftSaved = await handleSaveDraft({ silentReload: true });
+    if (!draftSaved) {
+      addToast('Đã hủy khóa sổ do lưu bản nháp thất bại!', 'error');
+      return;
+    }
 
     try {
       const res = await api.finalizeEvaluation({
@@ -321,7 +327,7 @@ export default function EvaluationManagerModal({
       });
       if (res.success) {
         addToast(res.message, 'success');
-        loadEvaluationData();
+        await loadEvaluationData();
         onSuccess?.();
         onSaved?.();
       } else {
@@ -472,34 +478,36 @@ export default function EvaluationManagerModal({
               </select>
             </div>
 
-            {/* Nút Kích Hoạt Sửa Thủ Công & Khôi Phục */}
-            <div className="flex items-center gap-2 ml-auto">
-              <button
-                type="button"
-                onClick={() => setIsManualEdit(!isManualEdit)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs transition-all shadow-2xs ${
-                  isManualEdit
-                    ? 'bg-amber-600 text-white hover:bg-amber-700 ring-2 ring-amber-400/50'
-                    : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-300'
-                }`}
-                title="Cho phép chỉnh sửa trực tiếp điểm Chuyên cần và Điểm Hoạt động bằng tay"
-              >
-                <Sliders className="w-3.5 h-3.5" />
-                <span>{isManualEdit ? 'Đang bật Sửa Thủ Công' : 'Kích hoạt Sửa Thủ Công'}</span>
-              </button>
-
-              {isManualEdit && (
+            {/* Nút Kích Hoạt Sửa Thủ Công & Khôi Phục (Chỉ dành cho Admin) */}
+            {isAdmin && (
+              <div className="flex items-center gap-2 ml-auto">
                 <button
                   type="button"
-                  onClick={handleResetManualToAuto}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-all"
-                  title="Khôi phục điểm Chuyên cần và Hoạt động về giá trị tự động từ hệ thống"
+                  onClick={() => setIsManualEdit(!isManualEdit)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs transition-all shadow-2xs ${
+                    isManualEdit
+                      ? 'bg-amber-600 text-white hover:bg-amber-700 ring-2 ring-amber-400/50'
+                      : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-300'
+                  }`}
+                  title="Cho phép Admin chỉnh sửa trực tiếp điểm Chuyên cần và Điểm Hoạt động bằng tay"
                 >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Khôi phục tự động</span>
+                  <Sliders className="w-3.5 h-3.5"/>
+                  <span>{isManualEdit ? 'Đang bật Sửa Thủ Công' : 'Kích hoạt Sửa Thủ Công'}</span>
                 </button>
-              )}
-            </div>
+
+                {isManualEdit && (
+                  <button
+                    type="button"
+                    onClick={handleResetManualToAuto}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-all"
+                    title="Khôi phục điểm Chuyên cần và Hoạt động về giá trị tự động từ hệ thống"
+                  >
+                    <RotateCcw className="w-3 h-3"/>
+                    <span>Khôi phục tự động</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Tóm tắt thống kê danh hiệu */}
@@ -673,14 +681,14 @@ export default function EvaluationManagerModal({
                         ref={(el) => {
                           if (el) {
                             const selectable = getSelectableMembers();
-                            const isAll = selectable.length > 0 && selectable.every((m) => selectedEvalMemberIds.includes(m.member.id));
+                            const isAll = selectable.length > 0 && selectable.every((m) => selectedEvalSet.has(m.member.id));
                             const isSome = selectedEvalMemberIds.length > 0 && !isAll;
                             el.indeterminate = isSome;
                           }
                         }}
                         checked={
                           getSelectableMembers().length > 0 &&
-                          getSelectableMembers().every((m) => selectedEvalMemberIds.includes(m.member.id)) &&
+                          getSelectableMembers().every((m) => selectedEvalSet.has(m.member.id)) &&
                           selectedEvalMemberIds.length > 0
                         }
                         onChange={(e) => {
@@ -717,7 +725,7 @@ export default function EvaluationManagerModal({
                     const { attScore, actScore, qScore, totalScore, rank, notes } = calculateCurrentRow(item);
                     const isRowLocked = isAllLocked || item.isLocked;
                     const canEditThisMember = isAdmin || (isLeader && user?.targetType === memberType && Number(user?.groupNum) === Number(item.member.group_num));
-                    const isRowSelected = selectedEvalMemberIds.includes(item.member.id);
+                    const isRowSelected = selectedEvalSet.has(item.member.id);
 
                     return (
                       <tr 

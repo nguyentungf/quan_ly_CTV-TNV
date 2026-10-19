@@ -45,12 +45,21 @@ router.get('/members', async (req, res) => {
 });
 
 // 2. Thêm mới CTV
+// 2. Thêm mới CTV
 router.post('/members', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { mssv, fullName, groupNum, role, gender, className, phone, email, status } = req.body;
-    if (!mssv || !fullName || !groupNum) {
+    if (!mssv || !fullName || (!groupNum && req.user.role !== 'leader')) {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin bắt buộc: MSSV, Họ tên hoặc Nhóm' });
     }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'ctv') {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+    }
+
+    const effectiveGroupNum = req.user.role === 'leader' ? Number(req.user.groupNum) : Number(groupNum);
 
     const newMember = await db.get(`
       INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
@@ -59,7 +68,7 @@ router.post('/members', checkGroupPermission('ctv'), async (req, res) => {
     `, [
       mssv.trim(),
       fullName.trim(),
-      Number(groupNum),
+      effectiveGroupNum,
       role || 'Thành viên',
       gender || 'Nam',
       className?.trim() || '',
@@ -83,13 +92,26 @@ router.put('/members/:id', checkGroupPermission('ctv'), async (req, res) => {
     const { id } = req.params;
     const { fullName, groupNum, role, gender, className, phone, email, status } = req.body;
 
+    const member = await db.get('SELECT * FROM ctv_members WHERE id = ?', [Number(id)]);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy CTV' });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'ctv' || Number(member.group_num) !== Number(req.user.groupNum)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+    }
+
+    const effectiveGroupNum = req.user.role === 'leader' ? Number(member.group_num) : Number(groupNum || member.group_num);
+
     await db.run(`
       UPDATE ctv_members 
       SET full_name = ?, group_num = ?, role = ?, gender = ?, class_name = ?, phone = ?, email = ?, status = ?
       WHERE id = ?
     `, [
       fullName?.trim(),
-      Number(groupNum),
+      effectiveGroupNum,
       role || 'Thành viên',
       gender || 'Nam',
       className?.trim() || '',
@@ -109,6 +131,17 @@ router.put('/members/:id', checkGroupPermission('ctv'), async (req, res) => {
 router.delete('/members/:id', checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { id } = req.params;
+    const member = await db.get('SELECT * FROM ctv_members WHERE id = ?', [Number(id)]);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy CTV' });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'ctv' || Number(member.group_num) !== Number(req.user.groupNum)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+    }
+
     await db.run('DELETE FROM ctv_members WHERE id = ?', [Number(id)]);
     res.json({ success: true, message: 'Đã xóa CTV thành công' });
   } catch (error) {
@@ -153,6 +186,22 @@ router.post('/bulk-action', validateBulkMemberIds, checkGroupPermission('ctv'), 
         success: false,
         message: 'Thao tác này chỉ dành riêng cho Ban Chủ Nhiệm (Admin)!'
       });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'ctv') {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+      if (action === 'change_group') {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+      const otherGroupMembers = await db.all(
+        `SELECT id FROM ctv_members WHERE id IN (${placeholders}) AND group_num != ?`,
+        [...ids, Number(req.user.groupNum)]
+      );
+      if (otherGroupMembers.length > 0) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
     }
 
     if (action === 'change_status') {
@@ -540,6 +589,17 @@ router.post('/attendance', checkGroupPermission('ctv'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin điểm danh' });
     }
 
+    const member = await db.get('SELECT * FROM ctv_members WHERE id = ?', [Number(memberId)]);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy CTV' });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'ctv' || Number(member.group_num) !== Number(req.user.groupNum)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
+    }
+
     // Chuẩn hóa trạng thái về 3 giá trị duy nhất: 'tham_gia', 'co_phep', 'khong_phep'
     let normStatus = status;
     if (status === 'co_mat') normStatus = 'tham_gia';
@@ -578,6 +638,12 @@ router.post('/attitude-activity', checkGroupPermission('ctv'), async (req, res) 
     const member = await db.get('SELECT * FROM ctv_members WHERE id = ?', [Number(memberId)]);
     if (!member) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy CTV' });
+    }
+
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== 'ctv' || Number(member.group_num) !== Number(req.user.groupNum)) {
+        return res.status(403).json({ success: false, message: 'Không có quyền thao tác nhân sự nhóm khác' });
+      }
     }
 
     const delta = Number(pointsDelta);
@@ -638,30 +704,34 @@ router.post('/merge-groups', requireAdmin, async (req, res) => {
       });
     }
 
-    const srcMembers = await db.all('SELECT * FROM ctv_members WHERE group_num = ?', [src]);
-    if (srcMembers.length === 0) {
-      return res.status(400).json({ success: false, message: `Nhóm ${src} hiện không có thành viên nào để gộp!` });
-    }
-
-    // Kiểm tra xem Nhóm B (src) có Nhóm trưởng TNV trong ctv_group_leaders không
-    const srcLeaderAssignment = await db.get(`
-      SELECT cgl.*, t.full_name
-      FROM ctv_group_leaders cgl
-      JOIN tnv_members t ON cgl.tnv_id = t.id
-      WHERE cgl.group_num = ? AND cgl.role = 'leader'
-    `, [src]);
-
-    // Fallback: Tìm trong ctv_members cũ nếu có
-    const srcLegacyLeader = srcMembers.find(m => m.role === 'Nhóm trưởng');
-
+    let mergedCount = 0;
     let demotedLeaderName = 'Không có Nhóm trưởng';
-    if (srcLeaderAssignment) {
-      demotedLeaderName = `${srcLeaderAssignment.full_name} (TNV)`;
-    } else if (srcLegacyLeader) {
-      demotedLeaderName = srcLegacyLeader.full_name;
-    }
 
     await db.transaction(async (txDb) => {
+      const srcMembers = await txDb.all('SELECT * FROM ctv_members WHERE group_num = ?', [src]);
+      if (srcMembers.length === 0) {
+        const err = new Error(`Nhóm ${src} hiện không có thành viên nào để gộp!`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // Kiểm tra xem Nhóm B (src) có Nhóm trưởng TNV trong ctv_group_leaders không
+      const srcLeaderAssignment = await txDb.get(`
+        SELECT cgl.*, t.full_name
+        FROM ctv_group_leaders cgl
+        JOIN tnv_members t ON cgl.tnv_id = t.id
+        WHERE cgl.group_num = ? AND cgl.role = 'leader'
+      `, [src]);
+
+      // Fallback: Tìm trong ctv_members cũ nếu có
+      const srcLegacyLeader = srcMembers.find(m => m.role === 'Nhóm trưởng');
+
+      if (srcLeaderAssignment) {
+        demotedLeaderName = `${srcLeaderAssignment.full_name} (TNV)`;
+      } else if (srcLegacyLeader) {
+        demotedLeaderName = srcLegacyLeader.full_name;
+      }
+
       // 1. Chuyển nhóm trưởng TNV của src thành nhóm phó của tgt trong ctv_group_leaders
       if (srcLeaderAssignment) {
         // Gỡ bỏ nhóm phó cũ của tgt (nếu có) để nhường vị trí cho nhóm trưởng cũ của src
@@ -686,23 +756,27 @@ router.post('/merge-groups', requireAdmin, async (req, res) => {
       await txDb.run(`UPDATE ctv_members SET group_num = ? WHERE group_num = ?`, [tgt, src]);
 
       // 3. Ghi log lịch sử gộp nhóm
+      mergedCount = srcMembers.length;
       await txDb.run(`
         INSERT INTO ctv_merge_logs (source_group, target_group, demoted_leader_name, merged_count, note)
         VALUES (?, ?, ?, ?, ?)
-      `, [src, tgt, demotedLeaderName, srcMembers.length, notes || `Gộp Nhóm ${src} vào Nhóm ${tgt}. ${demotedLeaderName} chuyển thành Nhóm phó.`]);
+      `, [src, tgt, demotedLeaderName, mergedCount, notes || `Gộp Nhóm ${src} vào Nhóm ${tgt}. ${demotedLeaderName} chuyển thành Nhóm phó.`]);
     });
 
     res.json({
       success: true,
-      message: `Đã gộp thành công ${srcMembers.length} thành viên từ Nhóm ${src} vào Nhóm ${tgt}!`,
+      message: `Đã gộp thành công ${mergedCount} thành viên từ Nhóm ${src} vào Nhóm ${tgt}!`,
       details: {
         sourceGroup: src,
         targetGroup: tgt,
         demotedLeader: demotedLeaderName,
-        mergedCount: srcMembers.length
+        mergedCount
       }
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: 'Lỗi thực hiện gộp nhóm', error: error.message });
   }
 });

@@ -260,41 +260,120 @@ router.post('/grade-draft', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Dữ liệu đánh giá không hợp lệ!' });
     }
 
+    if (req.user.role === 'leader') {
+      if (req.user.targetType !== memberType) {
+        return res.status(403).json({
+          success: false,
+          message: 'Không có quyền đánh giá nhân sự phân hệ khác'
+        });
+      }
+
+      const memberTable = memberType === 'ctv' ? 'ctv_members' : 'tnv_members';
+      const inputIds = evalList.map(item => Number(item.memberId));
+      const placeholders = inputIds.map(() => '?').join(',');
+      const rows = await db.all(`SELECT id, group_num FROM ${memberTable} WHERE id IN (${placeholders})`, inputIds);
+      const foreign = rows.some(m => Number(m.group_num) !== Number(req.user.groupNum));
+      if (foreign || rows.length !== inputIds.length) {
+        return res.status(403).json({
+          success: false,
+          message: 'Không có quyền thao tác nhân sự nhóm khác'
+        });
+      }
+    }
+
     const evaluatorName = req.user.displayName || (req.user.role === 'admin' ? 'Ban Quản Trị' : `Nhóm trưởng Nhóm ${req.user.groupNum}`);
     const rubric = await getRubric();
     let updatedCount = 0;
     let singleResult = null;
+
+    const isCtv = memberType === 'ctv';
+    const eventTable = isCtv ? 'ctv_events' : 'tnv_events';
+    const allEvents = await db.all(`SELECT id FROM ${eventTable}`);
+    const isMidterm = period === 'midterm';
+    const periodEvents = isMidterm ? allEvents.slice(0, 10) : allEvents;
+    const periodEventIds = new Set(periodEvents.map(e => e.id));
+    const totalEvents = periodEvents.length;
 
     await db.transaction(async (txDb) => {
       for (const item of evalList) {
         const { memberId, qualitativeScore, notes, attendanceScore, activityScore, rankGrade } = item;
         const mid = Number(memberId);
         const qScore = Math.max(-rubric.qualitativeWeight, Math.min(rubric.qualitativeWeight, Number(qualitativeScore || 0)));
-        const attScore = Number(attendanceScore || 0);
-        const actScore = Number(activityScore || 0);
-        const totalScore = attScore + actScore + qScore;
 
         // Lấy thông tin nhóm của thành viên
-        const memberTable = memberType === 'ctv' ? 'ctv_members' : 'tnv_members';
-        const member = await txDb.get(`SELECT group_num FROM ${memberTable} WHERE id = ?`, [mid]);
+        const memberTable = isCtv ? 'ctv_members' : 'tnv_members';
+        const member = await txDb.get(`SELECT * FROM ${memberTable} WHERE id = ?`, [mid]);
         if (!member) continue;
 
         // Nếu là Nhóm trưởng, chỉ được chấm điểm thành viên nhóm mình
-        if (req.user.role !== 'admin') {
-          if (req.user.targetType !== memberType || Number(req.user.groupNum) !== Number(member.group_num)) {
-            continue; // Bỏ qua thành viên nhóm khác
+        if (req.user.role === 'leader') {
+          if (Number(req.user.groupNum) !== Number(member.group_num)) {
+            continue;
           }
         }
 
         // Kiểm tra xem đã bị khóa sổ chưa
         const existing = await txDb.get(
-          'SELECT is_locked FROM evaluations WHERE period = ? AND member_type = ? AND member_id = ?',
+          'SELECT * FROM evaluations WHERE period = ? AND member_type = ? AND member_id = ?',
           [period, memberType, mid]
         );
         if (existing && existing.is_locked === 1 && req.user.role !== 'admin') {
           const err = new Error('Đánh giá kỳ này đã được Ban Quản Trị chính thức khóa sổ, không thể chỉnh sửa!');
           err.status = 400;
           throw err;
+        }
+
+        let attScore = 0;
+        let actScore = 0;
+
+        if (req.user.role === 'admin') {
+          attScore = Number(attendanceScore || 0);
+          actScore = Number(activityScore || 0);
+        } else {
+          // Leader: Không cho phép ghi đè attendanceScore và activityScore thủ công
+          if (existing && existing.attendance_score !== null && existing.attendance_score !== undefined) {
+            attScore = Number(existing.attendance_score);
+          } else {
+            const attTable = isCtv ? 'ctv_attendance' : 'tnv_attendance';
+            const attRecords = await txDb.all(`SELECT event_id, status FROM ${attTable} WHERE member_id = ?`, [mid]);
+            let attendedCount = 0;
+            let excusedCount = 0;
+            for (const r of attRecords) {
+              if (periodEventIds.has(r.event_id)) {
+                if (r.status === 'tham_gia' || r.status === 'co_mat') attendedCount++;
+                else if (r.status === 'co_phep') excusedCount++;
+              }
+            }
+            const rate = totalEvents > 0 ? (attendedCount + excusedCount * 0.5) / totalEvents : 0;
+            attScore = Math.max(0, Math.min(rubric.attendanceWeight, Math.round(rate * rubric.attendanceWeight)));
+          }
+
+          if (existing && existing.activity_score !== null && existing.activity_score !== undefined) {
+            actScore = Number(existing.activity_score);
+          } else {
+            const rawAct = isCtv ? (member.activity_points || 0) : (member.total_points || 0);
+            actScore = Math.max(0, Math.min(rubric.activityWeight, rawAct));
+          }
+        }
+
+        const totalScore = attScore + actScore + qScore;
+
+        let finalRank = rankGrade || 'Khá';
+        if (req.user.role !== 'admin' || !rankGrade) {
+          if (totalScore >= rubric.thresholdExcellent) finalRank = 'Xuất sắc';
+          else if (totalScore >= rubric.thresholdGood) finalRank = 'Tốt';
+          else if (totalScore >= rubric.thresholdFair) finalRank = 'Khá';
+          else finalRank = 'Cần cải thiện';
+
+          if (!isCtv) {
+            if (member.warning_level === 'canh_cao_2') {
+              finalRank = 'Kỷ luật (Thẻ Đỏ)';
+            } else if (member.warning_level === 'canh_cao_1') {
+              if (finalRank === 'Xuất sắc') finalRank = 'Tốt';
+              else if (finalRank === 'Tốt') finalRank = 'Khá';
+              else finalRank = 'Cần cải thiện';
+            }
+          }
         }
 
         await txDb.run(`
@@ -316,7 +395,7 @@ router.post('/grade-draft', requireAuth, async (req, res) => {
         `, [
           period, memberType, mid, member.group_num,
           attScore, actScore, qScore, totalScore,
-          rankGrade || 'Khá', evaluatorName, notes || ''
+          finalRank, evaluatorName, notes || ''
         ]);
 
         singleResult = {

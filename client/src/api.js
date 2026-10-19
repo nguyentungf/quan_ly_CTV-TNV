@@ -181,6 +181,15 @@ export const api = {
     return res.json();
   },
 
+  rateCtvAttitudeActivity: async (data) => {
+    const res = await authFetch(`${API_BASE}/ctv/attitude-activity`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
   getCtvPointLogs: async (memberId) => {
     const res = await authFetch(`${API_BASE}/ctv/point-logs/${memberId}`);
     return res.json();
@@ -289,7 +298,17 @@ export const api = {
     return res.json();
   },
 
+  getTnvLeaderboard: async () => {
+    const res = await authFetch(`${API_BASE}/tnv/top-5`);
+    return res.json();
+  },
+
   getTnvDiscipline: async () => {
+    const res = await authFetch(`${API_BASE}/tnv/discipline`);
+    return res.json();
+  },
+
+  getTnvDisciplineBoard: async () => {
     const res = await authFetch(`${API_BASE}/tnv/discipline`);
     return res.json();
   },

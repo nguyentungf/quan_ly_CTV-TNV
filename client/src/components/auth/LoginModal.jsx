@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 import { X, Shield, Users, Eye, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function LoginModal() {
@@ -18,15 +19,7 @@ export default function LoginModal() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (isLoginModalOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isLoginModalOpen]);
+  useLockBodyScroll(isLoginModalOpen);
 
   if (!isLoginModalOpen) return null;
 
@@ -269,7 +262,7 @@ export default function LoginModal() {
                   className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <p className="text-[11px] text-slate-400 mt-1 italic">
-                  💡 Mật khẩu mặc định: <span className="font-mono text-indigo-600 font-medium">{leaderType}{groupNum}@123</span>
+                  Liên hệ Ban Chủ Nhiệm nếu bạn quên mật khẩu của nhóm.
                 </p>
               </div>
 
@@ -307,9 +300,6 @@ export default function LoginModal() {
                   onChange={(e) => setAdminPassword(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <p className="text-[11px] text-slate-400 mt-1 italic">
-                  💡 Mật khẩu mặc định: <span className="font-mono text-purple-600 font-medium">admin123</span>
-                </p>
               </div>
 
               <div className="pt-2">

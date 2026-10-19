@@ -30,6 +30,7 @@ import { api } from '../../api';
 import { useToast } from '../common/Toast';
 import ConfirmModal from '../common/ConfirmModal';
 import { useAuth } from '../../context/AuthContext';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function CampaignManager() {
   const { addToast } = useToast();
@@ -64,15 +65,7 @@ export default function CampaignManager() {
   const [editingCampaign, setEditingCampaign] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
-  useEffect(() => {
-    if (showEditModal) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [showEditModal]);
+  useLockBodyScroll(showEditModal);
 
   // Group registration & member selection state
   const [quickGroupType, setQuickGroupType] = useState('ctv');
@@ -200,6 +193,10 @@ export default function CampaignManager() {
 
   const handleToggleConfirm = async (member) => {
     if (!activeCampaign) return;
+    if (Number(member.is_penalized) === 1 && !isAdmin) {
+      addToast('Danh sách đã chốt phạt (-20đ). Chỉ Admin mới có quyền thay đổi!', 'warning');
+      return;
+    }
     const canEdit = isAdmin || (isLeader && user?.targetType === 'tnv' && Number(user?.groupNum) === Number(member.group_num));
     if (!canEdit) {
       addToast(`Bạn không có quyền xác nhận cho thành viên Nhóm ${member.group_num}!`, 'warning');
@@ -235,7 +232,6 @@ export default function CampaignManager() {
       });
       if (res.success) {
         addToast(res.message, 'success');
-        loadConfirmations(activeCampaign.id);
       } else {
         addToast(res.message || 'Lỗi cập nhật xác nhận', 'error');
         loadConfirmations(activeCampaign.id);

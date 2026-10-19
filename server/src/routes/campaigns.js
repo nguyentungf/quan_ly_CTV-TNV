@@ -355,13 +355,42 @@ router.post('/:id/register-group', requireAuth, async (req, res) => {
     }
 
     // Nếu không phải Admin thì chỉ được đăng ký cho nhóm của mình
-    if (req.user.role !== 'admin') {
+    if (req.user.role === 'leader') {
       if (req.user.targetType !== memberType || Number(req.user.groupNum) !== gNum) {
         return res.status(403).json({
           success: false,
-          message: `Bạn chỉ có quyền đăng ký cho nhóm của mình (Nhóm ${req.user.groupNum} ${req.user.targetType.toUpperCase()})!`
+          message: 'Phát hiện thao tác trái phép lên thành viên nhóm khác!'
         });
       }
+
+      // Kiểm tra danh sách thành viên truyền lên để chống IDOR
+      let passedIds = [];
+      if (Array.isArray(selectedMembers) && selectedMembers.length > 0) {
+        passedIds = selectedMembers.map(item => Number(item.memberId));
+      } else if (Array.isArray(memberIds) && memberIds.length > 0) {
+        passedIds = memberIds.map(Number);
+      }
+
+      if (passedIds.length > 0) {
+        const memberTable = memberType === 'ctv' ? 'ctv_members' : 'tnv_members';
+        const placeholders = passedIds.map(() => '?').join(',');
+        const checkRows = await db.all(
+          `SELECT id, group_num FROM ${memberTable} WHERE id IN (${placeholders})`,
+          passedIds
+        );
+        const hasForeign = checkRows.some(m => Number(m.group_num) !== Number(req.user.groupNum));
+        if (hasForeign || checkRows.length !== passedIds.length) {
+          return res.status(403).json({
+            success: false,
+            message: 'Phát hiện thao tác trái phép lên thành viên nhóm khác!'
+          });
+        }
+      }
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn không có quyền thực hiện thao tác này!'
+      });
     }
 
     // Lấy danh sách thành viên đang hoạt động của nhóm đó
@@ -914,13 +943,18 @@ router.post('/:id/confirmations/toggle', requireAuth, async (req, res) => {
     if (!member) return res.status(404).json({ success: false, message: 'Không tìm thấy TNV' });
 
     // Kiểm tra phân quyền: Admin toàn quyền; Nhóm trưởng chỉ được tick nhóm mình
-    if (req.user.role !== 'admin') {
+    if (req.user.role === 'leader') {
       if (req.user.targetType !== 'tnv' || Number(req.user.groupNum) !== Number(member.group_num)) {
         return res.status(403).json({
           success: false,
-          message: `Thành viên này thuộc Nhóm ${member.group_num}. Bạn chỉ có quyền quản lý Nhóm ${req.user.groupNum}!`
+          message: 'Phát hiện thao tác trái phép lên thành viên nhóm khác!'
         });
       }
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn không có quyền thực hiện thao tác này!'
+      });
     }
 
     const confirmFlag = isConfirmed ? 1 : 0;
@@ -958,6 +992,21 @@ router.post('/:id/confirmations/batch-toggle', requireAuth, async (req, res) => 
     let targetMemberIds = [];
 
     if (all) {
+      if (req.user.role === 'leader') {
+        if (req.user.targetType !== 'tnv') {
+          return res.status(403).json({
+            success: false,
+            message: 'Phát hiện thao tác trái phép lên thành viên nhóm khác!'
+          });
+        }
+        if (groupNum && groupNum !== 'all' && Number(groupNum) !== Number(req.user.groupNum)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Phát hiện thao tác trái phép lên thành viên nhóm khác!'
+          });
+        }
+      }
+
       // Trường hợp "Thao tác tất cả"
       let query = "SELECT id, group_num FROM tnv_members WHERE status = 'Đang hoạt động'";
       const params = [];
@@ -995,14 +1044,25 @@ router.post('/:id/confirmations/batch-toggle', requireAuth, async (req, res) => 
         memberIds.map(Number)
       );
 
-      if (req.user.role !== 'admin') {
-        const foreignMembers = members.filter(m => Number(m.group_num) !== Number(req.user.groupNum));
-        if (foreignMembers.length > 0) {
+      if (req.user.role === 'leader') {
+        if (req.user.targetType !== 'tnv') {
           return res.status(403).json({
             success: false,
-            message: `Bạn chỉ có quyền thao tác thành viên thuộc Nhóm ${req.user.groupNum}. Có ${foreignMembers.length} thành viên thuộc nhóm khác!`
+            message: 'Phát hiện thao tác trái phép lên thành viên nhóm khác!'
           });
         }
+        const foreignMembers = members.filter(m => Number(m.group_num) !== Number(req.user.groupNum));
+        if (foreignMembers.length > 0 || members.length !== memberIds.length) {
+          return res.status(403).json({
+            success: false,
+            message: 'Phát hiện thao tác trái phép lên thành viên nhóm khác!'
+          });
+        }
+      } else if (req.user.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Bạn không có quyền thực hiện thao tác này!'
+        });
       }
 
       targetMemberIds = members.map(m => m.id);
@@ -1101,44 +1161,45 @@ router.post('/:id/confirmations/finalize', requireAuth, async (req, res) => {
 
     await db.transaction(async (txDb) => {
       for (const m of activeMembers) {
+        // Đảm bảo có record trong campaign_confirmations (nếu chưa có thì insert mặc định: is_confirmed = 0, is_penalized = 0)
+        await txDb.run(`
+          INSERT INTO campaign_confirmations (campaign_id, member_id, group_num, is_confirmed, is_penalized)
+          VALUES (?, ?, ?, 0, 0)
+          ON CONFLICT(campaign_id, member_id) DO NOTHING
+        `, [Number(id), m.id, m.group_num]);
+
         const conf = await txDb.get(`
-          SELECT * FROM campaign_confirmations 
+          SELECT is_confirmed FROM campaign_confirmations 
           WHERE campaign_id = ? AND member_id = ?
         `, [Number(id), m.id]);
 
-        const isConfirmed = conf ? Number(conf.is_confirmed) === 1 : false;
-        const isPenalized = conf ? Number(conf.is_penalized) === 1 : false;
-
-        if (isConfirmed) {
+        if (conf && Number(conf.is_confirmed) === 1) {
           confirmedCount++;
-        } else if (!isPenalized) {
-          // Chưa confirm và chưa bị phạt -> Phạt trừ 20 điểm!
-          await txDb.run(`
-            INSERT INTO tnv_activities (member_id, category, points, note)
-            VALUES (?, 'Kỷ luật / Không confirm', -20, ?)
-          `, [m.id, `Không xác nhận hoạt động: ${camp.name}`]);
+        } else {
+          // Atomic update: chỉ update và phạt nếu is_confirmed = 0 VÀ is_penalized = 0
+          const updateRes = await txDb.run(`
+            UPDATE campaign_confirmations
+            SET is_penalized = 1
+            WHERE campaign_id = ? AND member_id = ? AND is_confirmed = 0 AND is_penalized = 0
+          `, [Number(id), m.id]);
 
-          if (conf) {
+          const changes = updateRes?.changes ?? updateRes?.rowCount ?? 0;
+          if (changes > 0) {
+            // Trừ 20 điểm và ghi log kỷ luật
             await txDb.run(`
-              UPDATE campaign_confirmations 
-              SET is_penalized = 1 
+              INSERT INTO tnv_activities (member_id, category, points, note)
+              VALUES (?, 'Kỷ luật / Không confirm', -20, ?)
+            `, [m.id, `Không xác nhận hoạt động: ${camp.name}`]);
+
+            // Đồng bộ lại total_points của TNV
+            await txDb.run(`
+              UPDATE tnv_members 
+              SET total_points = (SELECT COALESCE(SUM(points), 0) FROM tnv_activities WHERE member_id = ?)
               WHERE id = ?
-            `, [conf.id]);
-          } else {
-            await txDb.run(`
-              INSERT INTO campaign_confirmations (campaign_id, member_id, group_num, is_confirmed, is_penalized)
-              VALUES (?, ?, ?, 0, 1)
-            `, [Number(id), m.id, m.group_num]);
+            `, [m.id, m.id]);
+
+            newlyPenalizedCount++;
           }
-
-          // Đồng bộ lại total_points của TNV
-          await txDb.run(`
-            UPDATE tnv_members 
-            SET total_points = (SELECT COALESCE(SUM(points), 0) FROM tnv_activities WHERE member_id = ?)
-            WHERE id = ?
-          `, [m.id, m.id]);
-
-          newlyPenalizedCount++;
         }
       }
     });

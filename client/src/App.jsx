@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthContext';
 import LoginModal from './components/auth/LoginModal';
 import PasswordManagerModal from './components/auth/PasswordManagerModal';
 import { api } from './api';
+import { useDebounce } from './hooks/useDebounce';
 
 // CTV Components
 import CtvOverview from './components/ctv/CtvOverview';
@@ -79,22 +80,27 @@ function DashboardContent() {
   const [showEvaluationModal, setShowEvaluationModal] = useState(false);
   const [evaluationModalType, setEvaluationModalType] = useState('ctv'); // 'ctv' | 'tnv'
 
-  // Initial load
+  const debouncedCtvSearch = useDebounce(ctvSearch, 300);
+  const debouncedTnvSearch = useDebounce(tnvSearch, 300);
+
+  // Initial load (chỉ tải dữ liệu tổng quan, danh sách thành viên do effect bên dưới đảm nhiệm)
   useEffect(() => {
-    loadCtvData();
-    loadTnvData();
+    loadCtvGroupsSummary();
+    loadTnvGroupsSummary();
+    loadTnvLeaderboard();
+    loadTnvDiscipline();
     loadCampaignCount();
   }, []);
 
-  // Reload CTV when filters change
+  // Reload CTV when debounced search or filters change
   useEffect(() => {
     loadCtvMembers();
-  }, [ctvSearch, ctvGroupFilter, ctvStatusFilter]);
+  }, [debouncedCtvSearch, ctvGroupFilter, ctvStatusFilter]);
 
-  // Reload TNV when filters change
+  // Reload TNV when debounced search or filters change
   useEffect(() => {
     loadTnvMembers();
-  }, [tnvSearch, tnvGroupFilter, tnvWarningFilter, tnvStatusFilter]);
+  }, [debouncedTnvSearch, tnvGroupFilter, tnvWarningFilter, tnvStatusFilter]);
 
   const loadCampaignCount = async () => {
     try {

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Crown, ShieldAlert, CheckCircle2, UserCheck, Search, Trash2, Users } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function CtvAssignLeaderModal({
   isOpen,
@@ -21,6 +22,8 @@ export default function CtvAssignLeaderModal({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  useLockBodyScroll(isOpen);
+
   useEffect(() => {
     if (isOpen) {
       setSelectedGroup(initialGroup || 1);
@@ -29,12 +32,6 @@ export default function CtvAssignLeaderModal({
       setSearchTerm('');
       setNote('');
       loadTnvList();
-
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
     }
   }, [isOpen, initialGroup]);
 
