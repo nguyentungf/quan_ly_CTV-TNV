@@ -492,6 +492,15 @@ export const api = {
     return res.json();
   },
 
+  overrideCampaignAttendance: async (campaignId, data) => {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/override-attendance`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
   deleteCampaignRegistration: async (campaignId, registrationId) => {
     const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/registrations/${registrationId}`, {
       method: 'DELETE',

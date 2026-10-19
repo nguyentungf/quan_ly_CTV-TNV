@@ -199,6 +199,8 @@ router.get('/:id/registrations', async (req, res) => {
         r.registered_by,
         r.attendance_status,
         r.points_awarded,
+        COALESCE(r.admin_override_points, 0) as admin_override_points,
+        COALESCE(r.admin_override_reason, '') as admin_override_reason,
         r.created_at as registered_at,
         CASE 
           WHEN r.member_type = 'ctv' THEN c.full_name 
@@ -705,6 +707,114 @@ router.put('/:id/attendance-bulk', requireAuth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lỗi điểm danh hàng loạt', error: error.message });
+  }
+});
+
+// 8.2. CAN THIỆP & ĐIỀU CHỈNH ĐẶC CÁCH CỦA ADMIN (ADMIN OVERRIDE ATTENDANCE & POINTS)
+router.put('/:id/override-attendance', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { registrationId, attendanceStatus, finalPoints, reason } = req.body;
+
+    if (!registrationId) {
+      return res.status(400).json({ success: false, message: 'Thiếu thông tin đăng ký (registrationId)' });
+    }
+
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    const targetPoints = Number.isInteger(Number(finalPoints)) ? Number(finalPoints) : (camp.points || 10);
+    const targetStatus = attendanceStatus || 'co_mat';
+    const overrideReason = (reason || '').trim() || 'Admin điều chỉnh đặc cách';
+    const baseCampaignPoints = camp.points || 10;
+    const overridePointsDiff = targetPoints - baseCampaignPoints;
+
+    let updatedReg = null;
+    let overrideError = null;
+
+    await db.transaction(async (txDb) => {
+      const reg = await txDb.get(
+        db.isPostgres
+          ? 'SELECT * FROM campaign_registrations WHERE id = ? AND campaign_id = ? FOR UPDATE'
+          : 'SELECT * FROM campaign_registrations WHERE id = ? AND campaign_id = ?',
+        [Number(registrationId), Number(id)]
+      );
+
+      if (!reg) {
+        overrideError = { status: 404, message: 'Không tìm thấy thông tin đăng ký' };
+        return;
+      }
+
+      const previousAwarded = Number(reg.points_awarded) || 0;
+      const pointsDelta = targetPoints - previousAwarded;
+
+      // 1. Cập nhật điểm thành viên nếu có chênh lệch điểm (pointsDelta !== 0)
+      if (pointsDelta !== 0) {
+        if (reg.member_type === 'ctv') {
+          await txDb.run(`
+            UPDATE ctv_members 
+            SET activity_points = activity_points + ?, total_points = total_points + ? 
+            WHERE id = ?
+          `, [pointsDelta, pointsDelta, reg.member_id]);
+
+          await txDb.run(`
+            INSERT INTO ctv_point_logs (member_id, type, title, points_delta, note)
+            VALUES (?, 'activity', ?, ?, ?)
+          `, [
+            reg.member_id, 
+            `[Admin Đặc Cách] ${camp.name}`, 
+            pointsDelta, 
+            `Lý do: ${overrideReason} (${pointsDelta > 0 ? '+' : ''}${pointsDelta}đ)`
+          ]);
+        } else {
+          await txDb.run(`
+            UPDATE tnv_members 
+            SET total_points = total_points + ? 
+            WHERE id = ?
+          `, [pointsDelta, reg.member_id]);
+
+          await txDb.run(`
+            INSERT INTO tnv_activities (member_id, category, points, note)
+            VALUES (?, ?, ?, ?)
+          `, [
+            reg.member_id, 
+            'Đặc cách Admin', 
+            pointsDelta, 
+            `[Admin Đặc Cách] ${camp.name}: ${overrideReason}`
+          ]);
+        }
+      }
+
+      // 2. Cập nhật dòng campaign_registrations
+      await txDb.run(`
+        UPDATE campaign_registrations 
+        SET attendance_status = ?, 
+            points_awarded = ?, 
+            admin_override_points = ?, 
+            admin_override_reason = ? 
+        WHERE id = ?
+      `, [targetStatus, targetPoints, overridePointsDiff, overrideReason, Number(registrationId)]);
+
+      updatedReg = {
+        id: Number(registrationId),
+        attendance_status: targetStatus,
+        points_awarded: targetPoints,
+        admin_override_points: overridePointsDiff,
+        admin_override_reason: overrideReason
+      };
+    });
+
+    if (overrideError) {
+      return res.status(overrideError.status).json({ success: false, message: overrideError.message });
+    }
+
+    res.json({
+      success: true,
+      message: `Đã áp dụng điều chỉnh đặc cách cho thành viên (${targetPoints}đ)!`,
+      data: updatedReg
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi khi áp dụng điều chỉnh đặc cách của Admin', error: error.message });
   }
 });
 

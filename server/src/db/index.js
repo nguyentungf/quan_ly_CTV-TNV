@@ -428,6 +428,8 @@ export async function initSchema() {
     try { await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS require_confirm INTEGER DEFAULT 0`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS shift_id VARCHAR(100) DEFAULT ''`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS shift_name VARCHAR(255) DEFAULT ''`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS admin_override_points INTEGER DEFAULT 0`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS admin_override_reason TEXT DEFAULT ''`); } catch (e) {}
     console.log('✅ Khởi tạo cấu trúc bảng PostgreSQL hoàn tất!');
   } else {
     sqlite.exec(`
@@ -559,6 +561,8 @@ export async function initSchema() {
         registered_by TEXT DEFAULT 'Nhóm trưởng',
         attendance_status TEXT NOT NULL DEFAULT 'chua_diem_danh',
         points_awarded INTEGER NOT NULL DEFAULT 0,
+        admin_override_points INTEGER NOT NULL DEFAULT 0,
+        admin_override_reason TEXT DEFAULT '',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(campaign_id, member_type, member_id)
       );
@@ -623,6 +627,8 @@ export async function initSchema() {
     try { sqlite.exec(`ALTER TABLE campaigns ADD COLUMN require_confirm INTEGER DEFAULT 0`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN shift_id TEXT DEFAULT ''`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN shift_name TEXT DEFAULT ''`); } catch (e) {}
+    try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN admin_override_points INTEGER DEFAULT 0`); } catch (e) {}
+    try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN admin_override_reason TEXT DEFAULT ''`); } catch (e) {}
   }
 
   // Tự động kiểm tra và tạo cài đặt mặc định ban đầu nếu chưa có

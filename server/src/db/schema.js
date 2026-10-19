@@ -129,6 +129,8 @@ export const campaignRegistrations = sqliteTable('campaign_registrations', {
   registeredBy: text('registered_by').default('Nhóm trưởng'),
   attendanceStatus: text('attendance_status').notNull().default('chua_diem_danh'), // 'chua_diem_danh' | 'co_mat' | 'vang'
   pointsAwarded: integer('points_awarded').notNull().default(0), // Điểm đã cộng
+  adminOverridePoints: integer('admin_override_points').notNull().default(0), // Điểm thưởng/phạt đặc cách từ Admin
+  adminOverrideReason: text('admin_override_reason').default(''), // Lý do đặc cách từ Admin
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 

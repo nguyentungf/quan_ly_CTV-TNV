@@ -8,8 +8,8 @@
     "start": "node src/server.js",
     "seed": "node src/db/seed.js",
     "dev": "node src/server.js",
-    "test": "vitest",
-    "test:run": "vitest run"
+    "test": "vitest run --maxWorkers=2",
+    "test:run": "vitest run --maxWorkers=2"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

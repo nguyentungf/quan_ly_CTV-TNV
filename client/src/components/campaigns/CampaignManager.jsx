@@ -31,6 +31,7 @@ import { useToast } from '../common/Toast';
 import ConfirmModal from '../common/ConfirmModal';
 import { useAuth } from '../../context/AuthContext';
 import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
+import AdminCampaignOverrideModal from './AdminCampaignOverrideModal';
 
 export default function CampaignManager() {
   const { addToast } = useToast();
@@ -39,6 +40,7 @@ export default function CampaignManager() {
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [overrideModalReg, setOverrideModalReg] = useState(null);
 
   // Selected Campaign for Detail / Attendance Drawer
   const [activeCampaign, setActiveCampaign] = useState(null);
@@ -1775,7 +1777,7 @@ export default function CampaignManager() {
                       <th className="p-2.5 text-center">Nhóm</th>
                       <th className="p-2.5 text-center">Kíp / Ca</th>
                       <th className="p-2.5 text-center min-w-[170px]">Điểm danh hoạt động</th>
-                      <th className="p-2.5 pr-3 text-right">Xóa</th>
+                      <th className="p-2.5 pr-3 text-right min-w-[80px]">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1813,9 +1815,27 @@ export default function CampaignManager() {
                             </td>
                             <td className="p-2.5 font-mono text-slate-400">{idx + 1}</td>
                             <td className="p-2.5 font-bold text-slate-800">
-                              <div>{r.full_name}</div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span>{r.full_name}</span>
+                                {r.admin_override_reason && (
+                                  <span
+                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                                      Number(r.admin_override_points) >= 0
+                                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                        : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                    }`}
+                                    title={`Lý do đặc cách: ${r.admin_override_reason}`}
+                                  >
+                                    <Zap className="w-2.5 h-2.5 text-purple-600 fill-purple-600" />
+                                    {Number(r.admin_override_points) >= 0 ? `+${r.admin_override_points}đ` : `${r.admin_override_points}đ`}
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-[10px] text-slate-400 font-normal">
                                 ĐK bởi: {r.registered_by}
+                                {r.admin_override_reason && (
+                                  <span className="text-purple-600 ml-1 italic font-medium">({r.admin_override_reason})</span>
+                                )}
                               </div>
                             </td>
                             <td className="p-2.5 font-mono text-slate-600">{r.mssv}</td>
@@ -1901,17 +1921,29 @@ export default function CampaignManager() {
                             </td>
 
                             <td className="p-2.5 pr-3 text-right">
-                              {canEditGroup(r.member_type, r.group_num) ? (
-                                <button
-                                  onClick={() => handleDeleteRegistration(r.registration_id)}
-                                  title="Hủy đăng ký"
-                                  className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <span className="text-slate-300">-</span>
-                              )}
+                              <div className="flex items-center justify-end gap-1">
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setOverrideModalReg(r)}
+                                    title="Can thiệp & Điều chỉnh đặc cách (Admin)"
+                                    className="p-1 rounded text-purple-600 hover:text-purple-800 hover:bg-purple-100 border border-purple-200 transition-colors cursor-pointer"
+                                  >
+                                    <Zap className="w-3.5 h-3.5 fill-purple-100" />
+                                  </button>
+                                )}
+                                {canEditGroup(r.member_type, r.group_num) ? (
+                                  <button
+                                    onClick={() => handleDeleteRegistration(r.registration_id)}
+                                    title="Hủy đăng ký"
+                                    className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : (
+                                  !isAdmin && <span className="text-slate-300">-</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -2194,6 +2226,20 @@ export default function CampaignManager() {
         cancelText="Hủy bỏ"
         onConfirm={handleFinalizeConfirm}
         onCancel={() => setShowFinalizeModal(false)}
+      />
+
+      {/* Admin Override Attendance & Special Points Modal */}
+      <AdminCampaignOverrideModal
+        isOpen={!!overrideModalReg}
+        onClose={() => setOverrideModalReg(null)}
+        campaign={activeCampaign}
+        registration={overrideModalReg}
+        onSuccess={() => {
+          if (activeCampaign?.id) {
+            loadRegistrations(activeCampaign.id);
+            loadCampaigns();
+          }
+        }}
       />
     </div>
   );

@@ -29,6 +29,7 @@ import ConfirmModal from '../common/ConfirmModal';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
 import { useAuth } from '../../context/AuthContext';
+import TeamHealthWidget from '../common/TeamHealthWidget';
 
 export default function CtvMemberList({
   members = [],
@@ -150,7 +151,17 @@ export default function CtvMemberList({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden relative w-full max-w-full min-w-0">
+    <div className="space-y-4">
+      {/* Team Health & Action Items Widget for Leader / Admin */}
+      {(isLeader || (isAdmin && selectedGroup && selectedGroup !== 'all')) && (
+        <TeamHealthWidget
+          type="ctv"
+          groupNum={isLeader ? user?.groupNum : selectedGroup}
+          members={members}
+        />
+      )}
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden relative w-full max-w-full min-w-0">
       {/* Action Toolbar */}
       <div className="p-3.5 sm:p-5 border-b border-slate-200/80 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -706,6 +717,7 @@ export default function CtvMemberList({
         </div>,
         document.body
       )}
+      </div>
     </div>
   );
 }
