@@ -520,6 +520,12 @@ router.put('/:id/attendance', requireAuth, async (req, res) => {
       const previousAwarded = Number(reg.points_awarded) || 0;
       newAwarded = previousAwarded;
 
+      // Chặn điểm danh trùng lặp (TOCTOU Double Approval Prevention)
+      if (attendanceStatus === 'co_mat' && (reg.attendance_status === 'co_mat' || previousAwarded > 0)) {
+        attendanceError = { status: 409, message: 'Thành viên này đã được điểm danh có mặt trước đó!' };
+        return;
+      }
+
       // Trường hợp 1: Chuyển sang 'co_mat' và trước đó chưa cộng điểm
       if (attendanceStatus === 'co_mat' && previousAwarded === 0) {
         newAwarded = pointsDelta;
@@ -1183,8 +1189,8 @@ router.post('/:id/confirmations/finalize', requireAuth, async (req, res) => {
             WHERE campaign_id = ? AND member_id = ? AND is_confirmed = 0 AND is_penalized = 0
           `, [Number(id), m.id]);
 
-          const changes = updateRes?.changes ?? updateRes?.rowCount ?? 0;
-          if (changes > 0) {
+          const affectedRows = updateRes?.changes ?? updateRes?.rowCount ?? updateRes?.count ?? (Array.isArray(updateRes) ? updateRes.length : 0);
+          if (affectedRows > 0) {
             // Trừ 20 điểm và ghi log kỷ luật
             await txDb.run(`
               INSERT INTO tnv_activities (member_id, category, points, note)

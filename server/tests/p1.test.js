@@ -50,7 +50,7 @@ describe('P1 Test Cases: Business Logic & State Integrity', () => {
    * Outcome: Log điểm và trường total_points cập nhật chính xác, trạng thái registration chuyển sang co_mat.
    */
   describe('TC-P1-01 (Campaign Flow): Happy Path Core Campaign Lifecycle', () => {
-    it.skip('should execute end-to-end campaign registration and attendance approval, updating total_points and point logs', async () => {
+    it('should execute end-to-end campaign registration and attendance approval, updating total_points and point logs', async () => {
       // -----------------------------------------------------------------------
       // [ARRANGE / GIVEN]: Chuẩn bị nhân sự CTV Nhóm 1, token Admin & Leader Nhóm 1
       // -----------------------------------------------------------------------
@@ -175,7 +175,7 @@ describe('P1 Test Cases: Business Logic & State Integrity', () => {
    * Outcome: Trả về 403 Forbidden (Quyền set_warning chỉ dành cho Admin).
    */
   describe('TC-P1-02 (Privilege Escalation via bulk-action): Restriction on set_warning', () => {
-    it.skip('should reject set_warning action executed by a Group Leader with HTTP 403 Forbidden', async () => {
+    it('should reject set_warning action executed by a Group Leader with HTTP 403 Forbidden', async () => {
       // -----------------------------------------------------------------------
       // [ARRANGE / GIVEN]: Tạo TNV thuộc Nhóm 2 và token của Nhóm trưởng TNV Nhóm 2
       // -----------------------------------------------------------------------
@@ -323,7 +323,7 @@ describe('P1 Test Cases: Business Logic & State Integrity', () => {
    * Outcome: total_points phải tăng đúng 50 điểm, ctv_point_logs có đúng 50 dòng (Khắc phục lỗi ghi đè giá trị tuyệt đối).
    */
   describe('TC-P1-04 (Lost Update in Points): Concurrency in Point Scoring', () => {
-    it.skip('should correctly increment total_points by exactly 50 and record 50 log rows when 50 requests run concurrently', async () => {
+    it('should correctly increment total_points by exactly 50 and record 50 log rows when 50 requests run concurrently', async () => {
       // -----------------------------------------------------------------------
       // [ARRANGE / GIVEN]: Tạo 1 CTV với số điểm khởi đầu là 0
       // -----------------------------------------------------------------------
@@ -383,7 +383,7 @@ describe('P1 Test Cases: Business Logic & State Integrity', () => {
    * Outcome: 1 request thành công (+ điểm 1 lần duy nhất), request còn lại trả về 409 Conflict. Điểm số chỉ được cộng 1 lần.
    */
   describe('TC-P1-05 (Campaign Double-Click / TOCTOU): Double Attendance Request Prevention', () => {
-    it.skip('should allow only 1 attendance approval and reject concurrent duplicate with 409 Conflict, awarding points only once', async () => {
+    it('should allow only 1 attendance approval and reject concurrent duplicate with 409 Conflict, awarding points only once', async () => {
       // -----------------------------------------------------------------------
       // [ARRANGE / GIVEN]: Tạo chiến dịch (10 điểm), tạo CTV (0 điểm) và đăng ký tham gia
       // -----------------------------------------------------------------------

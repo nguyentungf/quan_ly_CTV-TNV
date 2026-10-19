@@ -581,8 +581,12 @@ export const api = {
   },
 
   // Reset database về trạng thái mẫu ban đầu
-  resetSeed: async () => {
-    const res = await authFetch(`${API_BASE}/reset-seed`, { method: 'POST' });
+  resetSeed: async (confirmCode = 'XOA-DU-LIEU') => {
+    const res = await authFetch(`${API_BASE}/reset-seed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmCode }),
+    });
     return res.json();
   }
 };

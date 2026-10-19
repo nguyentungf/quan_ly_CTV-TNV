@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Search,
@@ -81,10 +81,12 @@ export default function TnvMemberList({
 
   const memberToDelete = members.find((m) => m.id === deleteConfirmId);
 
-  // Checkbox handlers - chỉ cho phép chọn những thành viên có quyền sửa
-  const editableMembers = members.filter((m) => canEditGroup('tnv', m.group_num));
-  const editableIds = editableMembers.map((m) => m.id);
-  const isAllSelected = editableIds.length > 0 && editableIds.every((id) => selectedIds.includes(id));
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const editableIds = useMemo(
+    () => members.filter((m) => canEditGroup('tnv', m.group_num)).map((m) => m.id),
+    [members, canEditGroup]
+  );
+  const isAllSelected = editableIds.length > 0 && editableIds.every((id) => selectedIdSet.has(id));
   const isIndeterminate = selectedIds.length > 0 && !isAllSelected;
 
   const handleSelectAll = () => {
@@ -406,7 +408,7 @@ export default function TnvMemberList({
                 const isLeader = m.role === 'Nhóm trưởng';
                 const isDeputy = m.role === 'Nhóm phó';
                 const rate = m.benchmarkRate || 0;
-                const isSelected = selectedIds.includes(m.id);
+                const isSelected = selectedIdSet.has(m.id);
                 const canEdit = canEditGroup('tnv', m.group_num);
 
                 let progressColor = 'bg-blue-600';

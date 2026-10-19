@@ -41,7 +41,7 @@ export function getJwtSecret() {
 // Count requests as they arrive, rather than only failed attempts after the
 // async database lookup. This also protects against parallel password guesses.
 const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_RATE_LIMIT_MAX_REQUESTS = 10;
+const LOGIN_RATE_LIMIT_MAX_REQUESTS = 5;
 const loginRequestsByClient = new Map();
 
 function getLoginClientKey(req) {
@@ -247,7 +247,10 @@ router.get('/passwords', async (req, res) => {
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
     const user = verifyToken(token);
 
-    if (!user || user.role !== 'admin') {
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Vui lòng đăng nhập để thực hiện thao tác này!' });
+    }
+    if (user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Chỉ có Ban Chủ Nhiệm (Admin) mới có quyền xem danh sách mật khẩu!' });
     }
 
@@ -265,7 +268,10 @@ router.post('/reset-password', async (req, res) => {
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
     const user = verifyToken(token);
 
-    if (!user || user.role !== 'admin') {
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Vui lòng đăng nhập để thực hiện thao tác này!' });
+    }
+    if (user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Chỉ có Ban Chủ Nhiệm (Admin) mới có quyền cấp lại mật khẩu!' });
     }
 
@@ -308,7 +314,10 @@ router.post('/reset-all-default', async (req, res) => {
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
     const user = verifyToken(token);
 
-    if (!user || user.role !== 'admin') {
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Vui lòng đăng nhập để thực hiện thao tác này!' });
+    }
+    if (user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Chỉ có Ban Chủ Nhiệm (Admin) mới có quyền thực hiện thao tác này!' });
     }
 

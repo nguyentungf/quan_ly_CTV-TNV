@@ -4,6 +4,7 @@ import { X, Award, Sparkles, History, CheckCircle, Plus, Edit2, Trash2, Check, R
 import { api } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../common/Toast';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function TnvActivityModal({
   isOpen,
@@ -58,15 +59,7 @@ export default function TnvActivityModal({
     }
   };
 
-  useEffect(() => {
-    if (isOpen && member) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isOpen, member]);
+  useLockBodyScroll(isOpen && member);
 
   if (!isOpen || !member) return null;
 

@@ -4,6 +4,7 @@ import { X, UserPlus, Save } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
 import { useAuth } from '../../context/AuthContext';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function TnvMemberModal({
   isOpen,
@@ -55,15 +56,7 @@ export default function TnvMemberModal({
     }
   }, [editingMember, isOpen, isLeader, user]);
 
-  useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isOpen]);
+  useLockBodyScroll(isOpen);
 
   if (!isOpen) return null;
 

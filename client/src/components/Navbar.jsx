@@ -32,16 +32,26 @@ export default function Navbar({ activeTab, setActiveTab, onRefresh, stats, onOp
   } = useAuth();
 
   const handleResetData = async () => {
-    if (window.confirm('Bạn có chắc chắn muốn nạp lại dữ liệu mẫu tiếng Việt ban đầu không? Mọi thay đổi hiện tại sẽ được làm mới.')) {
-      try {
-        const res = await api.resetSeed();
-        if (res.success) {
-          addToast('Đã nạp lại dữ liệu mẫu thành công!', 'success');
-          onRefresh();
-        }
-      } catch (err) {
-        addToast('Lỗi khi nạp lại dữ liệu', 'error');
+    const input = window.prompt(
+      'CẢNH BÁO NGUY HIỂM: Thao tác này sẽ XÓA TOÀN BỘ dữ liệu thực tế hiện tại và ghi đè bằng dữ liệu mẫu ban đầu!\n\nNếu bạn chắc chắn muốn thực hiện, hãy nhập chính xác chữ: XOA-DU-LIEU'
+    );
+    if (input !== 'XOA-DU-LIEU') {
+      if (input !== null) {
+        addToast('Mã xác nhận không chính xác. Đã hủy thao tác!', 'warning');
       }
+      return;
+    }
+
+    try {
+      const res = await api.resetSeed('XOA-DU-LIEU');
+      if (res.success) {
+        addToast('Đã nạp lại dữ liệu mẫu thành công!', 'success');
+        onRefresh();
+      } else {
+        addToast(res.message || 'Lỗi khi nạp lại dữ liệu', 'error');
+      }
+    } catch (err) {
+      addToast(err.message || 'Lỗi khi nạp lại dữ liệu', 'error');
     }
   };
 

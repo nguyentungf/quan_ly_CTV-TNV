@@ -39,9 +39,21 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Endpoint reset lại database mẫu khi cần (Chỉ Admin)
+// Endpoint reset lại database mẫu khi cần (Chỉ Admin + Cần mã xác nhận an toàn)
 app.post('/api/reset-seed', requireAdmin, async (req, res) => {
   try {
+    const { confirmCode } = req.body || {};
+    const isProd = process.env.NODE_ENV === 'production';
+    const allowReset = process.env.ALLOW_RESET_SEED === 'true';
+
+    // Nếu đang ở production hoặc không cho phép reset seed tự do, bắt buộc phải có chuỗi xác nhận
+    if ((isProd || !allowReset) && confirmCode !== 'XOA-DU-LIEU') {
+      return res.status(403).json({
+        success: false,
+        message: 'Thao tác nguy hiểm! Cần cung cấp mã xác nhận confirmCode = "XOA-DU-LIEU" để nạp lại dữ liệu mẫu.'
+      });
+    }
+
     await seedDatabase();
     res.json({ success: true, message: 'Đã thiết lập lại dữ liệu mẫu thành công!' });
   } catch (error) {

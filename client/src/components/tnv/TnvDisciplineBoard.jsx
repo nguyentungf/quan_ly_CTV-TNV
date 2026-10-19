@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ShieldAlert, AlertTriangle, AlertOctagon, CheckCircle2, Edit3, X } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
+import { useLockBodyScroll } from '../../hooks/useLockBodyScroll';
 
 export default function TnvDisciplineBoard({
   disciplineData,
@@ -14,15 +15,7 @@ export default function TnvDisciplineBoard({
   const [newNote, setNewNote] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (selectedMember) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [selectedMember]);
+  useLockBodyScroll(Boolean(selectedMember));
 
   const { summary = { total: 0, level1: 0, level2: 0 }, data: warnedList = [] } = disciplineData || {};
 

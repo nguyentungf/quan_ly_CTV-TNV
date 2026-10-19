@@ -17,7 +17,7 @@ describe('P0 Test Cases: Critical Path & Security Verification', () => {
    * [BUG C-01]: Đã ghi nhận vào TODO_BUGFIX.md (App chấp nhận token giả mạo với secret mặc định).
    */
   describe('TC-P0-01: Hardcoded JWT secret and Admin token forgery verification', () => {
-    it.skip('should reject forged Admin token signed with exposed hardcoded secret by returning 401 Unauthorized', async () => {
+    it('should reject forged Admin token signed with exposed hardcoded secret by returning 401 Unauthorized', async () => {
       // 1. Arrange: Tạo token Admin giả mạo bằng chuỗi fallback secret bị lộ
       const forgedPayload = { role: 'admin' };
       const exposedSecret = 'quan-ly-ctv-tnv-secret-key-2026';
@@ -39,7 +39,7 @@ describe('P0 Test Cases: Critical Path & Security Verification', () => {
    * [BUG C-02]: Đã ghi nhận vào TODO_BUGFIX.md (Thiếu rate limit khi đăng nhập thất bại liên tục).
    */
   describe('TC-P0-02: Plaintext password leak and rate limiting verification', () => {
-    it.skip('should throttle consecutive failed login requests with HTTP 429 Too Many Requests from 6th attempt', async () => {
+    it('should throttle consecutive failed login requests with HTTP 429 Too Many Requests from 6th attempt', async () => {
       // 1. Arrange: Chuẩn bị payload login sai mật khẩu
       const wrongCredentials = {
         loginType: 'admin',
@@ -85,7 +85,7 @@ describe('P0 Test Cases: Critical Path & Security Verification', () => {
    * [BUG C-03]: Đã ghi nhận vào TODO_BUGFIX.md (Adapter transaction SQLite ném TypeError và gây Unhandled Rejection).
    */
   describe('TC-P0-03: Database transaction rollback on SQLite failure', () => {
-    it.skip('should roll back all executed statements in a transaction when an error occurs in subsequent statements', async () => {
+    it('should roll back all executed statements in a transaction when an error occurs in subsequent statements', async () => {
       // 1. Arrange: Chuẩn bị 1 CTV thử nghiệm và lấy điểm số ban đầu
       const testMssv = `P003_${Date.now()}`;
       await db.run(`
@@ -152,7 +152,7 @@ describe('P0 Test Cases: Critical Path & Security Verification', () => {
    * [BUG C-04]: Đã ghi nhận vào TODO_BUGFIX.md (Export CSV/XLSX trả 200 kèm PII mà không yêu cầu auth).
    */
   describe('TC-P0-04: Mass PII data leakage without authentication on export endpoints', () => {
-    it.skip('should reject unauthenticated requests to /api/ctv/export-csv with HTTP 401 Unauthorized', async () => {
+    it('should reject unauthenticated requests to /api/ctv/export-csv with HTTP 401 Unauthorized', async () => {
       // 1. Arrange: Đảm bảo có dữ liệu CTV trong hệ thống với thông tin SĐT và Email
       const dummyMssv = `P004_${Date.now()}`;
       await db.run(`
@@ -170,7 +170,7 @@ describe('P0 Test Cases: Critical Path & Security Verification', () => {
       expect(res.text).not.toContain('0912345678');
     });
 
-    it.skip('should reject unauthenticated requests to /api/ctv/export-xlsx with HTTP 401 Unauthorized', async () => {
+    it('should reject unauthenticated requests to /api/ctv/export-xlsx with HTTP 401 Unauthorized', async () => {
       // 1. Arrange & Act: Gửi GET request đến /api/ctv/export-xlsx KHÔNG có Auth Header
       const res = await request(app).get('/api/ctv/export-xlsx');
 
@@ -185,7 +185,7 @@ describe('P0 Test Cases: Critical Path & Security Verification', () => {
    * [BUG C-05]: Đã ghi nhận vào TODO_BUGFIX.md (SqliteError: too many SQL variables ném Unhandled Rejection khi gửi 40.000 items).
    */
   describe('TC-P0-05: Server crash prevention on excessive bulk payload (DoS resilience)', () => {
-    it.skip('should safely reject 40,000 items in memberIds with HTTP 400 or 413 without crashing server process', async () => {
+    it('should safely reject 40,000 items in memberIds with HTTP 400 or 413 without crashing server process', async () => {
       // 1. Arrange: Tạo payload với mảng memberIds chứa 40.000 phần tử
       const largeMemberIds = Array.from({ length: 40000 }, (_, i) => i + 1);
       const leaderToken = generateTestToken({ role: 'leader', targetType: 'ctv', groupNum: 1 });
