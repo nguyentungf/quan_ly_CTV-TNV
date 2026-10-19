@@ -871,5 +871,108 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     await db.run('DELETE FROM tnv_activities WHERE member_id IN (?, ?, ?)', [tnvA.id, tnvB.id, tnvC.id]);
     await db.run('DELETE FROM tnv_members WHERE id IN (?, ?, ?)', [tnvA.id, tnvB.id, tnvC.id]);
   });
+
+  it('Nghiệp vụ 6b: Thao tác nhiều & Thao tác tất cả Check Confirm (Batch & All Toggle)', async () => {
+    const leaderTokenG3 = generateTestToken({
+      role: 'leader',
+      targetType: 'tnv',
+      groupNum: 3,
+      displayName: 'Leader Nhóm 3'
+    });
+
+    // 1. Tạo campaign yêu cầu Check Confirm
+    const campRes = await request(app)
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Chiến dịch Batch Confirm TNV',
+        description: 'Test thao tác nhiều và thao tác tất cả confirm',
+        location: 'Sân C1',
+        eventDate: '2026-10-30',
+        points: 20,
+        targetType: 'tnv',
+        shifts: JSON.stringify([]),
+        requiredParticipants: 20,
+        requireConfirm: 1,
+      });
+    const campaignId = campRes.body.data.id;
+
+    // 2. Tạo 3 TNV Nhóm 3 và 1 TNV Nhóm 4
+    const tnvX = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, total_points, status)
+      VALUES (?, 'TNV Batch X', 3, 'Thành viên', 50, 'Đang hoạt động')
+      RETURNING id
+    `, [`batch_x_${Date.now()}`]);
+    const tnvY = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, total_points, status)
+      VALUES (?, 'TNV Batch Y', 3, 'Thành viên', 50, 'Đang hoạt động')
+      RETURNING id
+    `, [`batch_y_${Date.now()}`]);
+    const tnvZ = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, total_points, status)
+      VALUES (?, 'TNV Batch Z', 3, 'Thành viên', 50, 'Đang hoạt động')
+      RETURNING id
+    `, [`batch_z_${Date.now()}`]);
+    const tnvW = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, total_points, status)
+      VALUES (?, 'TNV Batch W (N4)', 4, 'Thành viên', 50, 'Đang hoạt động')
+      RETURNING id
+    `, [`batch_w_${Date.now()}`]);
+
+    // 3. Leader Nhóm 3 Thao tác nhiều: Xác nhận đã confirm cho [tnvX, tnvY]
+    const batchRes = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/batch-toggle`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`)
+      .send({
+        memberIds: [tnvX.id, tnvY.id],
+        isConfirmed: true,
+      });
+    expect(batchRes.status).toBe(200);
+    expect(batchRes.body.updatedCount).toBe(2);
+
+    const confX = await db.get('SELECT is_confirmed FROM campaign_confirmations WHERE campaign_id = ? AND member_id = ?', [campaignId, tnvX.id]);
+    const confY = await db.get('SELECT is_confirmed FROM campaign_confirmations WHERE campaign_id = ? AND member_id = ?', [campaignId, tnvY.id]);
+    expect(confX.is_confirmed).toBe(1);
+    expect(confY.is_confirmed).toBe(1);
+
+    // 4. Leader Nhóm 3 cố tình batch confirm có lẫn tnvW (thuộc Nhóm 4) -> 403 Forbidden
+    const crossGroupRes = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/batch-toggle`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`)
+      .send({
+        memberIds: [tnvX.id, tnvW.id],
+        isConfirmed: true,
+      });
+    expect(crossGroupRes.status).toBe(403);
+
+    // 5. Leader Nhóm 3 Thao tác nhiều: Hủy xác nhận cho [tnvX]
+    const unconfirmRes = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/batch-toggle`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`)
+      .send({
+        memberIds: [tnvX.id],
+        isConfirmed: false,
+      });
+    expect(unconfirmRes.status).toBe(200);
+    const confXAfter = await db.get('SELECT is_confirmed FROM campaign_confirmations WHERE campaign_id = ? AND member_id = ?', [campaignId, tnvX.id]);
+    expect(confXAfter.is_confirmed).toBe(0);
+
+    // 6. Admin Thao tác tất cả: Xác nhận ĐÃ CONFIRM cho toàn bộ (all: true)
+    const allConfirmRes = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/batch-toggle`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        all: true,
+        groupNum: 'all',
+        isConfirmed: true,
+      });
+    expect(allConfirmRes.status).toBe(200);
+    expect(allConfirmRes.body.updatedCount).toBeGreaterThanOrEqual(4);
+
+    // Cleanup
+    await db.run('DELETE FROM campaign_confirmations WHERE campaign_id = ?', [campaignId]);
+    await db.run('DELETE FROM campaigns WHERE id = ?', [campaignId]);
+    await db.run('DELETE FROM tnv_members WHERE id IN (?, ?, ?, ?)', [tnvX.id, tnvY.id, tnvZ.id, tnvW.id]);
+  });
 });
 

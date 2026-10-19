@@ -946,6 +946,113 @@ router.post('/:id/confirmations/toggle', requireAuth, async (req, res) => {
   }
 });
 
+// 13b. Thao tác nhiều / Thao tác tất cả Check Confirm (Batch Toggle Confirmations)
+router.post('/:id/confirmations/batch-toggle', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { memberIds, isConfirmed, all, groupNum, unconfirmedOnly } = req.body;
+
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    let targetMemberIds = [];
+
+    if (all) {
+      // Trường hợp "Thao tác tất cả"
+      let query = "SELECT id, group_num FROM tnv_members WHERE status = 'Đang hoạt động'";
+      const params = [];
+
+      const targetGroup = (groupNum && groupNum !== 'all') ? Number(groupNum) : null;
+      if (req.user.role !== 'admin') {
+        // Leader chỉ được thao tác tất cả trong nhóm của mình
+        query += " AND group_num = ?";
+        params.push(Number(req.user.groupNum));
+      } else if (targetGroup) {
+        query += " AND group_num = ?";
+        params.push(targetGroup);
+      }
+
+      const members = await db.all(query, params);
+
+      if (unconfirmedOnly) {
+        // Chỉ lấy những ai chưa confirm
+        const confs = await db.all('SELECT member_id, is_confirmed FROM campaign_confirmations WHERE campaign_id = ?', [Number(id)]);
+        const confMap = new Map(confs.map(c => [c.member_id, Number(c.is_confirmed) === 1]));
+        targetMemberIds = members.filter(m => !confMap.get(m.id)).map(m => m.id);
+      } else {
+        targetMemberIds = members.map(m => m.id);
+      }
+    } else {
+      // Trường hợp "Thao tác nhiều" theo danh sách memberIds
+      if (!Array.isArray(memberIds) || memberIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'Vui lòng chọn ít nhất một thành viên!' });
+      }
+
+      // Kiểm tra thành viên và phân quyền
+      const placeholders = memberIds.map(() => '?').join(',');
+      const members = await db.all(
+        `SELECT id, group_num, full_name FROM tnv_members WHERE id IN (${placeholders})`,
+        memberIds.map(Number)
+      );
+
+      if (req.user.role !== 'admin') {
+        const foreignMembers = members.filter(m => Number(m.group_num) !== Number(req.user.groupNum));
+        if (foreignMembers.length > 0) {
+          return res.status(403).json({
+            success: false,
+            message: `Bạn chỉ có quyền thao tác thành viên thuộc Nhóm ${req.user.groupNum}. Có ${foreignMembers.length} thành viên thuộc nhóm khác!`
+          });
+        }
+      }
+
+      targetMemberIds = members.map(m => m.id);
+    }
+
+    if (targetMemberIds.length === 0) {
+      return res.json({ success: true, message: 'Không có thành viên nào cần cập nhật', updatedCount: 0 });
+    }
+
+    const confirmFlag = isConfirmed ? 1 : 0;
+    const confirmedBy = req.user.displayName || (req.user.role === 'admin' ? 'Ban Quản Trị' : `Nhóm trưởng Nhóm ${req.user.groupNum || ''}`);
+    const confirmedAt = confirmFlag ? new Date().toISOString() : '';
+
+    // Lấy thông tin nhóm của các thành viên mục tiêu
+    const memberPlaceholders = targetMemberIds.map(() => '?').join(',');
+    const targetMembers = await db.all(
+      `SELECT id, group_num FROM tnv_members WHERE id IN (${memberPlaceholders})`,
+      targetMemberIds
+    );
+    const memberGroupMap = new Map(targetMembers.map(m => [m.id, m.group_num]));
+
+    let updatedCount = 0;
+    await db.transaction(async (txDb) => {
+      for (const mId of targetMemberIds) {
+        const gNum = memberGroupMap.get(mId) || 1;
+        await txDb.run(`
+          INSERT INTO campaign_confirmations (campaign_id, member_id, group_num, is_confirmed, confirmed_by, confirmed_at, is_penalized)
+          VALUES (?, ?, ?, ?, ?, ?, 0)
+          ON CONFLICT(campaign_id, member_id) DO UPDATE SET
+            is_confirmed = EXCLUDED.is_confirmed,
+            confirmed_by = EXCLUDED.confirmed_by,
+            confirmed_at = EXCLUDED.confirmed_at
+        `, [Number(id), mId, gNum, confirmFlag, confirmedBy, confirmedAt]);
+        updatedCount++;
+      }
+    });
+
+    res.json({
+      success: true,
+      message: confirmFlag 
+        ? `Đã xác nhận thành công cho ${updatedCount} thành viên`
+        : `Đã hủy xác nhận cho ${updatedCount} thành viên`,
+      updatedCount,
+      isConfirmed: confirmFlag
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi thực hiện thao tác hàng loạt', error: error.message });
+  }
+});
+
 // 14. Chốt danh sách xác nhận & Phạt trừ 20 điểm cho những ai không confirm
 router.post('/:id/confirmations/finalize', requireAuth, async (req, res) => {
   try {

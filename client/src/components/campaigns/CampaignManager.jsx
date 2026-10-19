@@ -56,6 +56,8 @@ export default function CampaignManager() {
   const [confSearch, setConfSearch] = useState('');
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [selectedConfMemberIds, setSelectedConfMemberIds] = useState([]);
+  const [batchProcessing, setBatchProcessing] = useState(false);
 
   // Modals
   const [showEditModal, setShowEditModal] = useState(false);
@@ -268,6 +270,109 @@ export default function CampaignManager() {
     } finally {
       setFinalizing(false);
     }
+  };
+
+  // Reset selection khi đổi chiến dịch, nhóm lọc hoặc từ khóa tìm kiếm
+  useEffect(() => {
+    setSelectedConfMemberIds([]);
+  }, [activeCampaign?.id, confGroupFilter, confSearch]);
+
+  // Lấy danh sách thành viên mà người dùng hiện tại có quyền thao tác (Admin hoặc Leader nhóm đó)
+  const getSelectableConfMembers = () => {
+    return confirmations.filter(
+      (m) => isAdmin || (isLeader && user?.targetType === 'tnv' && Number(user?.groupNum) === Number(m.group_num))
+    );
+  };
+
+  // Thao tác nhiều (Batch Toggle) cho các ID được chọn
+  const handleBatchToggleConfirm = async (memberIds, isConfirmed) => {
+    if (!activeCampaign || !memberIds || memberIds.length === 0) return;
+    setBatchProcessing(true);
+    try {
+      const res = await api.batchToggleCampaignConfirmations(activeCampaign.id, {
+        memberIds,
+        isConfirmed,
+      });
+      if (res.success) {
+        addToast(
+          res.message || (isConfirmed ? `Đã xác nhận cho ${memberIds.length} thành viên` : `Đã hủy xác nhận cho ${memberIds.length} thành viên`),
+          'success'
+        );
+        setSelectedConfMemberIds([]);
+        loadConfirmations(activeCampaign.id);
+      } else {
+        addToast(res.message || 'Lỗi thao tác hàng loạt', 'error');
+      }
+    } catch (err) {
+      addToast('Lỗi kết nối máy chủ', 'error');
+    } finally {
+      setBatchProcessing(false);
+    }
+  };
+
+  // Thao tác tất cả (All Toggle) cho toàn bộ danh sách đang lọc
+  const handleAllToggleConfirm = async (isConfirmed, unconfirmedOnly = false) => {
+    if (!activeCampaign) return;
+    const targetGroup = isLeader && user?.targetType === 'tnv'
+      ? user.groupNum
+      : (confGroupFilter !== 'all' ? confGroupFilter : 'all');
+
+    const actionText = isConfirmed 
+      ? (unconfirmedOnly ? 'xác nhận ĐÃ CONFIRM cho TẤT CẢ các bạn CHƯA confirm' : 'xác nhận ĐÃ CONFIRM cho TẤT CẢ thành viên')
+      : 'HỦY XÁC NHẬN (đưa về Chưa confirm) cho TẤT CẢ thành viên';
+
+    if (!window.confirm(`Bạn có chắc chắn muốn ${actionText} trong phạm vi đang xem không?`)) {
+      return;
+    }
+
+    setBatchProcessing(true);
+    try {
+      const res = await api.batchToggleCampaignConfirmations(activeCampaign.id, {
+        all: true,
+        groupNum: targetGroup,
+        isConfirmed,
+        unconfirmedOnly,
+      });
+      if (res.success) {
+        addToast(res.message || 'Thao tác tất cả thành công!', 'success');
+        setSelectedConfMemberIds([]);
+        loadConfirmations(activeCampaign.id);
+      } else {
+        addToast(res.message || 'Lỗi thao tác tất cả', 'error');
+      }
+    } catch (err) {
+      addToast('Lỗi kết nối máy chủ', 'error');
+    } finally {
+      setBatchProcessing(false);
+    }
+  };
+
+  // Tiện ích Chọn nhanh: Chọn tất cả hiển thị
+  const handleSelectAllConfVisible = () => {
+    const selectable = getSelectableConfMembers();
+    setSelectedConfMemberIds(selectable.map((m) => m.member_id));
+  };
+
+  // Tiện ích Chọn nhanh: Chọn tất cả chưa confirm
+  const handleSelectAllUnconfirmed = () => {
+    const selectable = getSelectableConfMembers();
+    const unconfirmed = selectable.filter((m) => Number(m.is_confirmed) !== 1);
+    if (unconfirmed.length === 0) {
+      addToast('Tất cả thành viên trong danh sách hiện tại đều đã confirm!', 'info');
+      return;
+    }
+    setSelectedConfMemberIds(unconfirmed.map((m) => m.member_id));
+  };
+
+  // Tiện ích Chọn nhanh: Chọn tất cả đã confirm
+  const handleSelectAllConfirmed = () => {
+    const selectable = getSelectableConfMembers();
+    const confirmed = selectable.filter((m) => Number(m.is_confirmed) === 1);
+    if (confirmed.length === 0) {
+      addToast('Chưa có thành viên nào được confirm trong danh sách này!', 'info');
+      return;
+    }
+    setSelectedConfMemberIds(confirmed.map((m) => m.member_id));
   };
 
   useEffect(() => {
@@ -1023,12 +1128,153 @@ export default function CampaignManager() {
                   </div>
                 </div>
 
-                {/* Table of Members */}
+                {/* Thanh công cụ Chọn nhanh & Thao tác tất cả (All Actions & Quick Selectors) */}
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-100/70 border border-slate-200 text-xs">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">
+                      Chọn nhanh:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllConfVisible}
+                      className="px-2.5 py-1 rounded-md bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-[11px] transition-all cursor-pointer shadow-2xs"
+                      title="Chọn tất cả thành viên có quyền quản lý trong danh sách này"
+                    >
+                      Chọn tất cả ({getSelectableConfMembers().length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllUnconfirmed}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-amber-300 hover:bg-amber-50 text-amber-800 font-bold text-[11px] transition-all cursor-pointer shadow-2xs"
+                      title="Chọn nhanh toàn bộ các bạn chưa được confirm"
+                    >
+                      <span>Chọn chưa confirm</span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[10px]">
+                        {getSelectableConfMembers().filter((m) => Number(m.is_confirmed) !== 1).length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllConfirmed}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 font-bold text-[11px] transition-all cursor-pointer shadow-2xs"
+                      title="Chọn nhanh toàn bộ các bạn đã confirm"
+                    >
+                      <span>Chọn đã confirm</span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px]">
+                        {getSelectableConfMembers().filter((m) => Number(m.is_confirmed) === 1).length}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Thao tác tất cả (All Actions) */}
+                  {(isAdmin || (isLeader && user?.targetType === 'tnv')) && (
+                    <div className="flex items-center gap-1.5 flex-wrap ml-auto">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">
+                        Thao tác tất cả:
+                      </span>
+                      <button
+                        type="button"
+                        disabled={batchProcessing}
+                        onClick={() => handleAllToggleConfirm(true, true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                        title="Xác nhận ĐÃ CONFIRM cho toàn bộ các bạn chưa confirm trong danh sách này"
+                      >
+                        <Check className="w-3 h-3 stroke-[3]" />
+                        <span>Xác nhận tất cả chưa confirm</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={batchProcessing}
+                        onClick={() => handleAllToggleConfirm(false, false)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-rose-300 hover:bg-rose-50 text-rose-700 font-bold text-[11px] shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                        title="Hủy xác nhận (đưa về Chưa confirm) cho toàn bộ thành viên trong danh sách này"
+                      >
+                        <X className="w-3 h-3 stroke-[2.5]" />
+                        <span>Hủy xác nhận tất cả</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Thanh công cụ Thao tác nhiều khi đã chọn (Bulk Action Floating Bar) */}
+                {selectedConfMemberIds.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-gradient-to-r from-indigo-50 via-blue-50 to-indigo-50 border-2 border-indigo-300 text-indigo-950 shadow-xs animate-fadeIn">
+                    <div className="flex items-center gap-2.5">
+                      <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-indigo-600 text-white text-xs font-black">
+                        {selectedConfMemberIds.length}
+                      </span>
+                      <span className="text-xs font-black text-indigo-900">
+                        Đang chọn {selectedConfMemberIds.length} thành viên
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedConfMemberIds([])}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 underline font-semibold ml-1 cursor-pointer"
+                      >
+                        Bỏ chọn
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        disabled={batchProcessing}
+                        onClick={() => handleBatchToggleConfirm(selectedConfMemberIds, true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                        title="Đánh dấu ĐÃ CONFIRM cho các thành viên đang được chọn"
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Xác nhận đã confirm ({selectedConfMemberIds.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={batchProcessing}
+                        onClick={() => handleBatchToggleConfirm(selectedConfMemberIds, false)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                        title="Đưa về CHƯA CONFIRM cho các thành viên đang được chọn"
+                      >
+                        <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>Hủy xác nhận ({selectedConfMemberIds.length})</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Table of Members with Multi-select Checkbox */}
                 <div className="overflow-x-auto border border-slate-200 rounded-xl flex-1 max-h-[440px]">
                   <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-xs z-10 font-bold text-slate-700 border-b border-slate-200">
+                    <thead className="sticky top-0 bg-slate-100/95 backdrop-blur-xs z-10 font-bold text-slate-700 border-b border-slate-200">
                       <tr>
-                        <th className="p-2.5 pl-3 w-10">STT</th>
+                        {/* Cột Checkbox Chọn tất cả (Select All) */}
+                        <th className="p-2.5 pl-3 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            ref={(el) => {
+                              if (el) {
+                                const selectable = getSelectableConfMembers();
+                                const isAll = selectable.length > 0 && selectable.every((m) => selectedConfMemberIds.includes(m.member_id));
+                                const isSome = selectedConfMemberIds.length > 0 && !isAll;
+                                el.indeterminate = isSome;
+                              }
+                            }}
+                            checked={
+                              getSelectableConfMembers().length > 0 &&
+                              getSelectableConfMembers().every((m) => selectedConfMemberIds.includes(m.member_id)) &&
+                              selectedConfMemberIds.length > 0
+                            }
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                handleSelectAllConfVisible();
+                              } else {
+                                setSelectedConfMemberIds([]);
+                              }
+                            }}
+                            className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                            title="Chọn tất cả / Bỏ chọn tất cả"
+                          />
+                        </th>
+                        <th className="p-2.5 w-10">STT</th>
                         <th className="p-2.5">MSSV</th>
                         <th className="p-2.5">Họ và tên</th>
                         <th className="p-2.5 text-center">Lớp</th>
@@ -1042,13 +1288,13 @@ export default function CampaignManager() {
                     <tbody className="divide-y divide-slate-100">
                       {loadingConf ? (
                         <tr>
-                          <td colSpan={9} className="p-6 text-center text-slate-400">
+                          <td colSpan={10} className="p-6 text-center text-slate-400">
                             Đang tải danh sách xác nhận TNV...
                           </td>
                         </tr>
                       ) : confirmations.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="p-6 text-center text-slate-400">
+                          <td colSpan={10} className="p-6 text-center text-slate-400">
                             Không tìm thấy thành viên TNV nào phù hợp.
                           </td>
                         </tr>
@@ -1057,15 +1303,40 @@ export default function CampaignManager() {
                           const isConfirmed = Number(m.is_confirmed) === 1;
                           const isPenalized = Number(m.is_penalized) === 1;
                           const canEditThisMember = isAdmin || (isLeader && user?.targetType === 'tnv' && Number(user?.groupNum) === Number(m.group_num));
+                          const isRowSelected = selectedConfMemberIds.includes(m.member_id);
 
                           return (
                             <tr
                               key={m.member_id}
-                              className={`hover:bg-slate-50 transition-colors ${
-                                isConfirmed ? 'bg-emerald-50/30' : isPenalized ? 'bg-rose-50/30' : ''
+                              className={`transition-colors ${
+                                isRowSelected 
+                                  ? 'bg-indigo-50/70 hover:bg-indigo-100/60' 
+                                  : isConfirmed 
+                                    ? 'bg-emerald-50/30 hover:bg-emerald-50/60' 
+                                    : isPenalized 
+                                      ? 'bg-rose-50/30 hover:bg-rose-50/60' 
+                                      : 'hover:bg-slate-50'
                               }`}
                             >
-                              <td className="p-2.5 pl-3 font-mono text-slate-400">{idx + 1}</td>
+                              {/* Checkbox từng dòng (Row Select) */}
+                              <td className="p-2.5 pl-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isRowSelected}
+                                  disabled={!canEditThisMember}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    if (e.target.checked) {
+                                      setSelectedConfMemberIds((prev) => [...prev, m.member_id]);
+                                    } else {
+                                      setSelectedConfMemberIds((prev) => prev.filter((id) => id !== m.member_id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                                  title={canEditThisMember ? 'Chọn thành viên này' : 'Bạn không có quyền quản lý thành viên này'}
+                                />
+                              </td>
+                              <td className="p-2.5 font-mono text-slate-400">{idx + 1}</td>
                               <td className="p-2.5 font-mono font-semibold text-slate-700">{m.mssv}</td>
                               <td className="p-2.5 font-bold text-slate-900">
                                 <div>{m.full_name}</div>
@@ -1079,7 +1350,7 @@ export default function CampaignManager() {
                                 </span>
                               </td>
 
-                              {/* Ô TICK ĐÃ CONFIRM DUY NHẤT */}
+                              {/* Ô TICK ĐÃ CONFIRM TỪNG NGƯỜI */}
                               <td className="p-2.5 text-center">
                                 {canEditThisMember ? (
                                   <button

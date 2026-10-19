@@ -495,6 +495,15 @@ export const api = {
     return res.json();
   },
 
+  batchToggleCampaignConfirmations: async (campaignId, data) => {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/confirmations/batch-toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
   finalizeCampaignConfirmations: async (campaignId, data) => {
     const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/confirmations/finalize`, {
       method: 'POST',
