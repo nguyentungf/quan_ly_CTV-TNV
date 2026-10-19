@@ -637,7 +637,7 @@ router.get('/export-csv', requireAuth, async (req, res) => {
   }
 });
 
-// 20. Tải file mẫu EXCEL (.xlsx) TNV
+// 20. Tải file mẫu EXCEL (.xlsx) TNV (Khớp định dạng 13 cột của danh sách CTV)
 router.get('/sample-xlsx', (req, res) => {
   try {
     const sampleData = [
@@ -645,23 +645,31 @@ router.get('/sample-xlsx', (req, res) => {
         'Nhóm trưởng': 'Nguyễn Quang Tùng',
         'STT': 1,
         'Nhóm': 'Nhóm 1',
-        'Họ và tên': 'Vũ Thu Ngân',
-        'MSSV': '202619067',
-        'Giới tính': 'Nữ',
-        'Số điện thoại': '0813994808',
-        'Lớp': 'ET1 - 04',
-        'Email': 'Ngan.VT2619067@sis.hust.edu.vn'
+        'Họ và tên': 'Vũ Đăng Khải',
+        'MSSV': '202414179',
+        'Giới tính': 'Nam',
+        'Số điện thoại': '0398787074',
+        'Lớp': 'ET1 - 03',
+        'Email': 'Khai.vd2414179@sis.hust.edu.vn',
+        'Chức vụ': 'Thành viên',
+        'Điểm thái độ': 5,
+        'Điểm hoạt động': 10,
+        'Tổng điểm': 15
       },
       {
         'Nhóm trưởng': 'Nguyễn Quang Tùng',
         'STT': 2,
         'Nhóm': 'Nhóm 1',
-        'Họ và tên': 'Vũ Ngọc Ánh',
-        'MSSV': '202610478',
+        'Họ và tên': 'Vũ Thu Ngân',
+        'MSSV': '202619067',
         'Giới tính': 'Nữ',
-        'Số điện thoại': '0826388469',
-        'Lớp': 'BF-E19',
-        'Email': 'anh.vn2610478@sis.hust.edu.vn'
+        'Số điện thoại': '0813994808',
+        'Lớp': 'ET1 - 04',
+        'Email': 'Ngan.VT2619067@sis.hust.edu.vn',
+        'Chức vụ': 'Thành viên',
+        'Điểm thái độ': 5,
+        'Điểm hoạt động': 12,
+        'Tổng điểm': 17
       },
       {
         'Nhóm trưởng': 'Lê Đức Minh',
@@ -672,22 +680,30 @@ router.get('/sample-xlsx', (req, res) => {
         'Giới tính': 'Nữ',
         'Số điện thoại': '0396161208',
         'Lớp': 'CH-E11 - 12',
-        'Email': 'Nhi.tp2616158@sis.hust.edu.vn'
+        'Email': 'Nhi.tp2616158@sis.hust.edu.vn',
+        'Chức vụ': 'Thành viên',
+        'Điểm thái độ': 5,
+        'Điểm hoạt động': 15,
+        'Tổng điểm': 20
       }
     ];
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(sampleData);
     ws['!cols'] = [
-      { wch: 20 },
-      { wch: 6 },
-      { wch: 10 },
-      { wch: 22 },
-      { wch: 14 },
-      { wch: 10 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 32 }
+      { wch: 22 }, // Nhóm trưởng
+      { wch: 6 },  // STT
+      { wch: 10 }, // Nhóm
+      { wch: 25 }, // Họ và tên
+      { wch: 14 }, // MSSV
+      { wch: 10 }, // Giới tính
+      { wch: 14 }, // Số điện thoại
+      { wch: 14 }, // Lớp
+      { wch: 32 }, // Email
+      { wch: 12 }, // Chức vụ
+      { wch: 12 }, // Điểm thái độ
+      { wch: 14 }, // Điểm hoạt động
+      { wch: 12 }  // Tổng điểm
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Mau_TNV');
@@ -701,13 +717,13 @@ router.get('/sample-xlsx', (req, res) => {
   }
 });
 
-// 21. Tải file mẫu CSV (.csv) TNV
+// 21. Tải file mẫu CSV (.csv) TNV (Khớp định dạng 13 cột của danh sách CTV)
 router.get('/sample-csv', (req, res) => {
   const sampleRows = [
-    ['Nhóm trưởng', 'STT', 'Nhóm', 'Họ và tên', 'MSSV', 'Giới tính', 'Số điện thoại', 'Lớp', 'Email'],
-    ['Nguyễn Quang Tùng', '1', 'Nhóm 1', 'Vũ Thu Ngân', '202619067', 'Nữ', '0813994808', 'ET1 - 04', 'Ngan.VT2619067@sis.hust.edu.vn'],
-    ['Nguyễn Quang Tùng', '2', 'Nhóm 1', 'Vũ Ngọc Ánh', '202610478', 'Nữ', '0826388469', 'BF-E19', 'anh.vn2610478@sis.hust.edu.vn'],
-    ['Lê Đức Minh', '3', 'Nhóm 2', 'Bùi Đức Anh', '20236789', 'Nam', '0902233445', 'ET1 - 05', 'anh.bd2023@sis.hust.edu.vn']
+    ['Nhóm trưởng', 'STT', 'Nhóm', 'Họ và tên', 'MSSV', 'Giới tính', 'Số điện thoại', 'Lớp', 'Email', 'Chức vụ', 'Điểm thái độ', 'Điểm hoạt động', 'Tổng điểm'],
+    ['Nguyễn Quang Tùng', '1', 'Nhóm 1', 'Vũ Đăng Khải', '202414179', 'Nam', '0398787074', 'ET1 - 03', 'Khai.vd2414179@sis.hust.edu.vn', 'Thành viên', '5', '10', '15'],
+    ['Nguyễn Quang Tùng', '2', 'Nhóm 1', 'Vũ Thu Ngân', '202619067', 'Nữ', '0813994808', 'ET1 - 04', 'Ngan.VT2619067@sis.hust.edu.vn', 'Thành viên', '5', '12', '17'],
+    ['Lê Đức Minh', '3', 'Nhóm 2', 'Trần Phương Nhi', '202616158', 'Nữ', '0396161208', 'CH-E11 - 12', 'Nhi.tp2616158@sis.hust.edu.vn', 'Thành viên', '5', '15', '20']
   ];
   const csvContent = sampleRows.map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const bomCsv = '\uFEFF' + csvContent;
@@ -717,7 +733,7 @@ router.get('/sample-csv', (req, res) => {
   res.status(200).send(bomCsv);
 });
 
-// 22. Nhập file (Hỗ trợ cả .xlsx, .xls và .csv, tự động nhận diện header dù có tiêu đề/banner phía trên)
+// 22. Nhập file TNV (Tương thích hoàn toàn với file export danh sách CTV và bảo toàn điểm hoạt động)
 router.post('/import-file', requireAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -773,6 +789,10 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
     const colPhone = findCol(['số điện thoại', 'sđt', 'phone', 'điện thoại']);
     const colEmail = findCol(['email']);
     const colRole = findCol(['chức vụ', 'role']);
+    
+    // Các cột điểm số tương thích với file export của CTV
+    const colActivityPoints = findCol(['điểm hoạt động', 'hoạt động', 'activity_points', 'activity points']);
+    const colTotalPoints = findCol(['tổng điểm', 'điểm tích lũy', 'total_points', 'total points']);
 
     if (colMssv === -1 || colName === -1) {
       return res.status(400).json({ 
@@ -783,6 +803,7 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
 
     let importedCount = 0;
     let updatedCount = 0;
+    let preservedPointsCount = 0;
     const errors = [];
     let currentGroupNum = 1;
 
@@ -795,13 +816,19 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
 
       if (!mssv || !fullName) continue;
 
+      // Xử lý nhóm TNV (TNV có 4 nhóm; nếu file CTV ghi từ nhóm 1-8 thì tự động ánh xạ về 1-4)
       let groupNum = currentGroupNum;
       if (colGroup !== -1 && row[colGroup]) {
         const rawGroup = String(row[colGroup]);
         const match = rawGroup.match(/\d+/);
         if (match) {
-          groupNum = Number(match[0]);
-          if (groupNum >= 1 && groupNum <= 4) {
+          const parsed = Number(match[0]);
+          if (parsed >= 1 && parsed <= 4) {
+            groupNum = parsed;
+            currentGroupNum = parsed;
+          } else if (parsed >= 5 && parsed <= 8) {
+            // Ánh xạ Nhóm 5-8 của CTV về 4 nhóm của TNV
+            groupNum = ((parsed - 1) % 4) + 1;
             currentGroupNum = groupNum;
           }
         }
@@ -817,22 +844,83 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
         role = String(row[colRole]).trim();
       }
 
+      // Xử lý bảo toàn điểm số hoạt động của CTV khi chuyển thành TNV:
+      // 1. Đọc điểm hoạt động từ file Excel (nếu có)
+      let pointsFromFile = 0;
+      if (colActivityPoints !== -1 && row[colActivityPoints] !== undefined && row[colActivityPoints] !== '') {
+        const parsed = Number(row[colActivityPoints]);
+        if (!isNaN(parsed)) pointsFromFile = Math.round(parsed);
+      } else if (colTotalPoints !== -1 && row[colTotalPoints] !== undefined && row[colTotalPoints] !== '') {
+        const parsed = Number(row[colTotalPoints]);
+        if (!isNaN(parsed)) pointsFromFile = Math.round(parsed);
+      }
+
       try {
+        // 2. Tra cứu CTV trong DB nếu đã có dữ liệu trước đó để bảo toàn điểm hoạt động chính xác
+        const ctvInDb = await db.get(`
+          SELECT m.id, m.full_name, m.activity_points, m.total_points,
+            COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id AND type = 'activity'), m.activity_points) as db_activity_points
+          FROM ctv_members m
+          WHERE m.mssv = ?
+        `, [mssv]);
+
+        // Ưu tiên điểm từ file nếu > 0; nếu file = 0 thì lấy từ dữ liệu hoạt động CTV trong DB
+        let preservedPoints = 0;
+        if (pointsFromFile > 0) {
+          preservedPoints = pointsFromFile;
+        } else if (ctvInDb) {
+          preservedPoints = Math.max(0, Number(ctvInDb.db_activity_points || ctvInDb.activity_points || 0));
+        }
+
+        let tnvId;
         const existing = await db.get('SELECT id FROM tnv_members WHERE mssv = ?', [mssv]);
         if (existing) {
+          tnvId = existing.id;
           await db.run(`
             UPDATE tnv_members 
             SET full_name = ?, group_num = ?, role = ?, gender = ?, class_name = ?, phone = ?, email = ?
             WHERE id = ?
-          `, [fullName, currentGroupNum, role, gender, className, phone, email, existing.id]);
+          `, [fullName, currentGroupNum, role, gender, className, phone, email, tnvId]);
           updatedCount++;
         } else {
-          await db.run(`
+          const inserted = await db.get(`
             INSERT INTO tnv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, total_points, status, warning_level, warning_note)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'Đang hoạt động', 'none', '')
+            RETURNING id
           `, [mssv, fullName, currentGroupNum, role, gender, className, phone, email]);
+          tnvId = inserted.id;
           importedCount++;
         }
+
+        // 3. Ghi nhận bảo toàn điểm số vào bảng hoạt động tnv_activities để hệ thống TNV cộng dồn chuẩn xác
+        if (preservedPoints > 0) {
+          const existingLog = await db.get(`
+            SELECT id FROM tnv_activities 
+            WHERE member_id = ? AND category = 'Bảo lưu điểm CTV'
+          `, [tnvId]);
+
+          if (existingLog) {
+            await db.run(`
+              UPDATE tnv_activities 
+              SET points = ?, note = ? 
+              WHERE id = ?
+            `, [preservedPoints, `Bảo toàn điểm số hoạt động từ thời CTV (${preservedPoints}đ)`, existingLog.id]);
+          } else {
+            await db.run(`
+              INSERT INTO tnv_activities (member_id, category, points, note)
+              VALUES (?, 'Bảo lưu điểm CTV', ?, ?)
+            `, [tnvId, preservedPoints, `Bảo toàn điểm số hoạt động từ thời CTV (${preservedPoints}đ)`]);
+          }
+          preservedPointsCount++;
+        }
+
+        // Đồng bộ lại total_points của TNV từ bảng tnv_activities
+        await db.run(`
+          UPDATE tnv_members 
+          SET total_points = (SELECT COALESCE(SUM(points), 0) FROM tnv_activities WHERE member_id = ?)
+          WHERE id = ?
+        `, [tnvId, tnvId]);
+
       } catch (err) {
         errors.push(`Dòng ${i + 1} (${mssv}): ${err.message}`);
       }
@@ -840,9 +928,10 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
 
     res.json({
       success: true,
-      message: `Nhập file hoàn tất: Đã thêm mới ${importedCount} và cập nhật ${updatedCount} TNV từ ${rawData.length - headerRowIdx - 1} dòng dữ liệu.`,
+      message: `Nhập file hoàn tất: Đã thêm mới ${importedCount}, cập nhật ${updatedCount} TNV và bảo toàn điểm hoạt động cho ${preservedPointsCount} thành viên từ ${rawData.length - headerRowIdx - 1} dòng dữ liệu.`,
       importedCount,
       updatedCount,
+      preservedPointsCount,
       errors
     });
   } catch (error) {

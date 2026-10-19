@@ -7,6 +7,7 @@ import ctvRouter from '../src/routes/ctv.js';
 import campaignsRouter from '../src/routes/campaigns.js';
 import tnvRouter from '../src/routes/tnv.js';
 import evaluationsRouter from '../src/routes/evaluations.js';
+import * as XLSX from 'xlsx';
 
 describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
   let app;
@@ -517,5 +518,100 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     await db.run('DELETE FROM ctv_group_leaders WHERE group_num IN (5, 6)');
     await db.run('DELETE FROM ctv_members WHERE id = ?', [ctvIn6.id]);
     await db.run('DELETE FROM tnv_members WHERE id IN (?, ?)', [tnv1.id, tnv2.id]);
+  });
+
+  // Nghiệp vụ: Import file định dạng danh sách CTV vào TNV và bảo toàn điểm hoạt động
+  it('Nghiệp vụ Import TNV từ file format CTV: Tương thích 13 cột và bảo toàn điểm hoạt động', async () => {
+    // 1. Tạo 1 CTV trong DB đã có điểm hoạt động
+    const mssvCtv1 = `test_ctv_to_tnv_${Date.now()}_1`;
+    const mssvCtv2 = `test_ctv_to_tnv_${Date.now()}_2`;
+
+    const ctv1 = await db.get(`
+      INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
+      VALUES (?, 'CTV Chuyển TNV 1', 6, 'Thành viên', 'Nam', 'ET1-01', '0912345001', 'ctv1@sis.edu.vn', 5, 25, 30, 'Đang hoạt động')
+      RETURNING *
+    `, [mssvCtv1]);
+
+    // Tạo file Excel giả lập có đúng cấu trúc 13 cột như file D:\Danh_sach_CTV_Dang_hoat_dong.xlsx
+    const sampleRows = [
+      {
+        'Nhóm trưởng': 'Nguyễn Quang Tùng',
+        'STT': 1,
+        'Nhóm': 'Nhóm 6', // Nhóm 6 của CTV -> sẽ map về Nhóm 2 của TNV (((6-1)%4)+1)
+        'Họ và tên': 'CTV Chuyển TNV 1',
+        'MSSV': mssvCtv1,
+        'Giới tính': 'Nam',
+        'Số điện thoại': '0912345001',
+        'Lớp': 'ET1-01',
+        'Email': 'ctv1@sis.edu.vn',
+        'Chức vụ': 'Thành viên',
+        'Điểm thái độ': 5,
+        'Điểm hoạt động': 25,
+        'Tổng điểm': 30
+      },
+      {
+        'Nhóm trưởng': 'Nguyễn Quang Tùng',
+        'STT': 2,
+        'Nhóm': 'Nhóm 2',
+        'Họ và tên': 'CTV Chuyển TNV 2',
+        'MSSV': mssvCtv2,
+        'Giới tính': 'Nữ',
+        'Số điện thoại': '0912345002',
+        'Lớp': 'ET1-02',
+        'Email': 'ctv2@sis.edu.vn',
+        'Chức vụ': 'Nhóm phó',
+        'Điểm thái độ': 10,
+        'Điểm hoạt động': 40,
+        'Tổng điểm': 50
+      }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(sampleRows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Danh sách CTV');
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // 2. Gửi request POST /api/tnv/import-file với buffer Excel
+    const importRes = await request(app)
+      .post('/api/tnv/import-file')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', excelBuffer, 'Danh_sach_CTV_Dang_hoat_dong.xlsx');
+
+    expect(importRes.status).toBe(200);
+    expect(importRes.body.success).toBe(true);
+    expect(importRes.body.importedCount).toBe(2);
+    expect(importRes.body.preservedPointsCount).toBe(2);
+
+    // 3. Kiểm tra TNV 1 sau khi import:
+    const tnv1 = await db.get('SELECT * FROM tnv_members WHERE mssv = ?', [mssvCtv1]);
+    expect(tnv1).toBeDefined();
+    expect(tnv1.full_name).toBe('CTV Chuyển TNV 1');
+    expect(tnv1.group_num).toBe(2); // Ánh xạ từ Nhóm 6 CTV sang Nhóm 2 TNV
+    expect(tnv1.total_points).toBe(25); // Bảo toàn điểm hoạt động (25đ)
+
+    // Kiểm tra bản ghi trong tnv_activities của TNV 1
+    const activityLog1 = await db.get(
+      "SELECT * FROM tnv_activities WHERE member_id = ? AND category = 'Bảo lưu điểm CTV'",
+      [tnv1.id]
+    );
+    expect(activityLog1).toBeDefined();
+    expect(activityLog1.points).toBe(25);
+
+    // 4. Kiểm tra TNV 2 sau khi import:
+    const tnv2 = await db.get('SELECT * FROM tnv_members WHERE mssv = ?', [mssvCtv2]);
+    expect(tnv2).toBeDefined();
+    expect(tnv2.total_points).toBe(40); // Điểm hoạt động bảo toàn là 40đ
+
+    const activityLog2 = await db.get(
+      "SELECT * FROM tnv_activities WHERE member_id = ? AND category = 'Bảo lưu điểm CTV'",
+      [tnv2.id]
+    );
+    expect(activityLog2).toBeDefined();
+    expect(activityLog2.points).toBe(40);
+
+    // Cleanup
+    await db.run('DELETE FROM tnv_activities WHERE member_id IN (?, ?)', [tnv1.id, tnv2.id]);
+    await db.run('DELETE FROM tnv_members WHERE id IN (?, ?)', [tnv1.id, tnv2.id]);
+    await db.run('DELETE FROM ctv_members WHERE id = ?', [ctv1.id]);
   });
 });

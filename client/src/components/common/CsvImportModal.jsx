@@ -187,9 +187,14 @@ export default function CsvImportModal({
               <span className="bg-slate-200 px-1.5 py-0.5 rounded font-mono">Số điện thoại</span>
               <span className="bg-slate-200 px-1.5 py-0.5 rounded font-mono">Lớp</span>
               <span className="bg-slate-200 px-1.5 py-0.5 rounded font-mono">Email</span>
+              <span className="bg-slate-200 px-1.5 py-0.5 rounded font-mono">Chức vụ</span>
+              <span className="bg-slate-200 px-1.5 py-0.5 rounded font-mono">Điểm thái độ</span>
+              <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold">Điểm hoạt động</span>
+              <span className="bg-slate-200 px-1.5 py-0.5 rounded font-mono">Tổng điểm</span>
             </div>
             <p className="text-[11px] text-slate-500 italic mt-1">
               * Tự động thêm mới nếu MSSV chưa có, hoặc cập nhật thông tin nếu MSSV đã tồn tại.
+              {!isCtv && ' Đặc biệt: Khi chuyển CTV thành TNV, điểm số hoạt động được tự động bảo toàn nguyên vẹn.'}
             </p>
           </div>
 
