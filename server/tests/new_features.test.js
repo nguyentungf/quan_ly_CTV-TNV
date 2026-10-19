@@ -534,6 +534,7 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
 
     // Tạo file Excel giả lập có đúng cấu trúc 13 cột như file D:\Danh_sach_CTV_Dang_hoat_dong.xlsx
     const mssvCtv3 = `test_ctv_to_tnv_${Date.now()}_3`;
+    const mssvCtv4 = `test_ctv_to_tnv_${Date.now()}_4`;
     const sampleRows = [
       {
         'Nhóm trưởng': 'Nguyễn Quang Tùng',
@@ -548,7 +549,7 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
         'Chức vụ': 'Thành viên',
         'Điểm thái độ': 5,
         'Điểm hoạt động': 25,
-        'Tổng điểm': 30
+        'Tổng điểm': 30 // Cột M: 30đ
       },
       {
         'Nhóm trưởng': 'Nguyễn Quang Tùng',
@@ -563,7 +564,7 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
         'Chức vụ': 'Nhóm phó',
         'Điểm thái độ': 10,
         'Điểm hoạt động': 40,
-        'Tổng điểm': 50
+        'Tổng điểm': 50 // Cột M: 50đ
       },
       {
         'Nhóm trưởng': 'Nguyễn Quang Tùng',
@@ -577,8 +578,23 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
         'Email': 'tung.tt@sis.hust.edu.vn',
         'Chức vụ': 'Thành viên',
         'Điểm thái độ': 5,
-        'Điểm hoạt động': 0, // Điểm hoạt động trong file là 0 -> Không được tự ý bịa hoặc đè số điểm khác
-        'Tổng điểm': 5
+        'Điểm hoạt động': 0,
+        'Tổng điểm': 5 // Cột M: 5đ
+      },
+      {
+        'Nhóm trưởng': 'Nguyễn Quang Tùng',
+        'STT': 4,
+        'Nhóm': 'Nhóm 1',
+        'Họ và tên': 'Nguyễn Lê Mai Anh',
+        'MSSV': mssvCtv4,
+        'Giới tính': 'Nữ',
+        'Số điện thoại': '0988776655',
+        'Lớp': 'ET2-01',
+        'Email': 'maianh.nl@sis.hust.edu.vn',
+        'Chức vụ': 'Thành viên',
+        'Điểm thái độ': 0,
+        'Điểm hoạt động': 0,
+        'Tổng điểm': 0 // Cột M: 0đ
       }
     ];
 
@@ -595,15 +611,15 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
 
     expect(importRes.status).toBe(200);
     expect(importRes.body.success).toBe(true);
-    expect(importRes.body.importedCount).toBe(3);
-    expect(importRes.body.preservedPointsCount).toBe(2);
+    expect(importRes.body.importedCount).toBe(4);
+    expect(importRes.body.preservedPointsCount).toBe(3); // 3 người có điểm Cột M > 0
 
-    // 3. Kiểm tra TNV 1 sau khi import:
+    // 3. Kiểm tra TNV 1 sau khi import (Cột M = 30đ):
     const tnv1 = await db.get('SELECT * FROM tnv_members WHERE mssv = ?', [mssvCtv1]);
     expect(tnv1).toBeDefined();
     expect(tnv1.full_name).toBe('CTV Chuyển TNV 1');
     expect(tnv1.group_num).toBe(2); // Ánh xạ từ Nhóm 6 CTV sang Nhóm 2 TNV
-    expect(tnv1.total_points).toBe(25); // Bảo toàn điểm hoạt động (25đ)
+    expect(tnv1.total_points).toBe(30); // Điểm lấy CHÍNH XÁC từ Cột M (30đ)
 
     // Kiểm tra bản ghi trong tnv_activities của TNV 1
     const activityLog1 = await db.get(
@@ -611,26 +627,37 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
       [tnv1.id]
     );
     expect(activityLog1).toBeDefined();
-    expect(activityLog1.points).toBe(25);
+    expect(activityLog1.points).toBe(30);
 
-    // 4. Kiểm tra TNV 2 sau khi import:
+    // 4. Kiểm tra TNV 2 sau khi import (Cột M = 50đ):
     const tnv2 = await db.get('SELECT * FROM tnv_members WHERE mssv = ?', [mssvCtv2]);
     expect(tnv2).toBeDefined();
-    expect(tnv2.total_points).toBe(40); // Điểm hoạt động bảo toàn là 40đ
+    expect(tnv2.total_points).toBe(50); // Điểm lấy CHÍNH XÁC từ Cột M (50đ)
 
-    // 5. Kiểm tra TNV 3 (Tạ Thanh Tùng có điểm hoạt động = 0):
+    // 5. Kiểm tra TNV 3 (Tạ Thanh Tùng: Cột M = 5đ):
     const tnv3 = await db.get('SELECT * FROM tnv_members WHERE mssv = ?', [mssvCtv3]);
     expect(tnv3).toBeDefined();
-    expect(tnv3.total_points).toBe(0); // Tuyệt đối là 0 điểm, không có log bảo lưu nào
+    expect(tnv3.total_points).toBe(5); // Điểm lấy CHÍNH XÁC từ Cột M (5đ)
     const activityLog3 = await db.get(
       "SELECT * FROM tnv_activities WHERE member_id = ? AND category = 'Bảo lưu điểm CTV'",
       [tnv3.id]
     );
-    expect(activityLog3).toBeFalsy();
+    expect(activityLog3).toBeDefined();
+    expect(activityLog3.points).toBe(5);
+
+    // 6. Kiểm tra TNV 4 (Cột M = 0đ):
+    const tnv4 = await db.get('SELECT * FROM tnv_members WHERE mssv = ?', [mssvCtv4]);
+    expect(tnv4).toBeDefined();
+    expect(tnv4.total_points).toBe(0); // 0 điểm, không có log bảo lưu nào
+    const activityLog4 = await db.get(
+      "SELECT * FROM tnv_activities WHERE member_id = ? AND category = 'Bảo lưu điểm CTV'",
+      [tnv4.id]
+    );
+    expect(activityLog4).toBeFalsy();
 
     // Cleanup
-    await db.run('DELETE FROM tnv_activities WHERE member_id IN (?, ?, ?)', [tnv1.id, tnv2.id, tnv3.id]);
-    await db.run('DELETE FROM tnv_members WHERE id IN (?, ?, ?)', [tnv1.id, tnv2.id, tnv3.id]);
+    await db.run('DELETE FROM tnv_activities WHERE member_id IN (?, ?, ?, ?)', [tnv1.id, tnv2.id, tnv3.id, tnv4.id]);
+    await db.run('DELETE FROM tnv_members WHERE id IN (?, ?, ?, ?)', [tnv1.id, tnv2.id, tnv3.id, tnv4.id]);
     await db.run('DELETE FROM ctv_members WHERE id = ?', [ctv1.id]);
   });
 });

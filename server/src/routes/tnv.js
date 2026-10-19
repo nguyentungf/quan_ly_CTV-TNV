@@ -790,9 +790,13 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
     const colEmail = findCol(['email']);
     const colRole = findCol(['chức vụ', 'role']);
     
-    // Các cột điểm số tương thích với file export của CTV
-    const colActivityPoints = findCol(['điểm hoạt động', 'hoạt động', 'activity_points', 'activity points']);
-    const colTotalPoints = findCol(['tổng điểm', 'điểm tích lũy', 'total_points', 'total points']);
+    // Cột điểm: CHỈ ĐƯỢC PHÉP lấy từ Cột M (index 12: A=0,...,M=12) hoặc cột có tiêu đề "Tổng điểm"
+    // Tuyệt đối CẤM setup/chế điểm ở code hay tra cứu fallback từ database
+    let colM = 12; // Cột M mặc định trong Excel (cột thứ 13, index 12)
+    const colTotalHeader = findCol(['tổng điểm', 'tong diem', 'total_points', 'total points']);
+    if (colTotalHeader !== -1) {
+      colM = colTotalHeader;
+    }
 
     if (colMssv === -1 || colName === -1) {
       return res.status(400).json({ 
@@ -844,40 +848,16 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
         role = String(row[colRole]).trim();
       }
 
-      // Xử lý bảo toàn điểm số hoạt động của CTV khi chuyển thành TNV:
-      // 1. Kiểm tra và đọc điểm hoạt động trực tiếp từ file Excel
-      let hasPointsInFile = false;
-      let pointsFromFile = 0;
-
-      if (colActivityPoints !== -1 && row[colActivityPoints] !== undefined && String(row[colActivityPoints]).trim() !== '') {
-        hasPointsInFile = true;
-        const parsed = Number(row[colActivityPoints]);
-        pointsFromFile = !isNaN(parsed) ? Math.max(0, Math.round(parsed)) : 0;
-      } else if (colTotalPoints !== -1 && row[colTotalPoints] !== undefined && String(row[colTotalPoints]).trim() !== '') {
-        hasPointsInFile = true;
-        const parsed = Number(row[colTotalPoints]);
-        pointsFromFile = !isNaN(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+      // Xử lý điểm số TNV:
+      // CHỈ ĐƯỢC PHÉP lấy dữ liệu trực tiếp từ Cột M trong file Excel tải lên.
+      // Tuyệt đối CẤM setup/chế điểm ở code hay tra cứu fallback từ database.
+      let preservedPoints = 0;
+      if (colM !== -1 && row[colM] !== undefined && row[colM] !== null && String(row[colM]).trim() !== '') {
+        const parsed = Number(row[colM]);
+        preservedPoints = (!isNaN(parsed) && parsed > 0) ? Math.round(parsed) : 0;
       }
 
       try {
-        let preservedPoints = 0;
-
-        if (hasPointsInFile) {
-          // File Excel ĐÃ CÓ số liệu (kể cả 0 điểm): Luôn lấy chính xác theo file Excel của người dùng, tuyệt đối không tự ý lấy số liệu khác
-          preservedPoints = pointsFromFile;
-        } else {
-          // Chỉ khi file Excel hoàn toàn KHÔNG CÓ cột điểm hoạt động, mới tra cứu từ dữ liệu CTV cũ trong DB
-          const ctvInDb = await db.get(`
-            SELECT m.id, m.full_name, m.activity_points, m.total_points,
-              COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id AND type = 'activity'), m.activity_points) as db_activity_points
-            FROM ctv_members m
-            WHERE m.mssv = ?
-          `, [mssv]);
-
-          if (ctvInDb) {
-            preservedPoints = Math.max(0, Number(ctvInDb.db_activity_points || ctvInDb.activity_points || 0));
-          }
-        }
 
         let tnvId;
         const existing = await db.get('SELECT id FROM tnv_members WHERE mssv = ?', [mssv]);
@@ -911,16 +891,16 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
               UPDATE tnv_activities 
               SET points = ?, note = ? 
               WHERE id = ?
-            `, [preservedPoints, `Bảo toàn điểm số hoạt động từ thời CTV (${preservedPoints}đ)`, existingLog.id]);
+            `, [preservedPoints, `Bảo toàn điểm số từ Cột M file Excel (${preservedPoints}đ)`, existingLog.id]);
           } else {
             await db.run(`
               INSERT INTO tnv_activities (member_id, category, points, note)
               VALUES (?, 'Bảo lưu điểm CTV', ?, ?)
-            `, [tnvId, preservedPoints, `Bảo toàn điểm số hoạt động từ thời CTV (${preservedPoints}đ)`]);
+            `, [tnvId, preservedPoints, `Bảo toàn điểm số từ Cột M file Excel (${preservedPoints}đ)`]);
           }
           preservedPointsCount++;
         } else {
-          // Nếu điểm hoạt động trong file là 0, dọn sạch bản ghi bảo lưu cũ (nếu có) để không bị sai lệch điểm
+          // Nếu Cột M trong file là 0 (hoặc để trống), dọn sạch bản ghi bảo lưu cũ (nếu có) để không bị sai lệch điểm
           await db.run(`
             DELETE FROM tnv_activities 
             WHERE member_id = ? AND category = 'Bảo lưu điểm CTV'
@@ -941,7 +921,7 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
 
     res.json({
       success: true,
-      message: `Nhập file hoàn tất: Đã thêm mới ${importedCount}, cập nhật ${updatedCount} TNV và bảo toàn điểm hoạt động cho ${preservedPointsCount} thành viên từ ${rawData.length - headerRowIdx - 1} dòng dữ liệu.`,
+      message: `Nhập file hoàn tất: Đã thêm mới ${importedCount}, cập nhật ${updatedCount} TNV và lấy điểm chính xác từ Cột M cho ${preservedPointsCount} thành viên từ ${rawData.length - headerRowIdx - 1} dòng dữ liệu.`,
       importedCount,
       updatedCount,
       preservedPointsCount,
