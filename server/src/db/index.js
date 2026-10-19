@@ -308,6 +308,16 @@ export async function initSchema() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS ctv_group_leaders (
+        id SERIAL PRIMARY KEY,
+        group_num INTEGER NOT NULL,
+        tnv_id INTEGER NOT NULL UNIQUE REFERENCES tnv_members(id) ON DELETE CASCADE,
+        role VARCHAR(50) NOT NULL DEFAULT 'leader',
+        assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        note TEXT DEFAULT '',
+        UNIQUE(group_num, role)
+      );
+
       CREATE TABLE IF NOT EXISTS tnv_events (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -474,6 +484,17 @@ export async function initSchema() {
         warning_level TEXT NOT NULL DEFAULT 'none',
         warning_note TEXT DEFAULT '',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS ctv_group_leaders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_num INTEGER NOT NULL,
+        tnv_id INTEGER NOT NULL UNIQUE,
+        role TEXT NOT NULL DEFAULT 'leader',
+        assigned_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        note TEXT DEFAULT '',
+        UNIQUE(group_num, role),
+        FOREIGN KEY (tnv_id) REFERENCES tnv_members(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS tnv_events (

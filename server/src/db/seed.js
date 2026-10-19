@@ -12,6 +12,7 @@ export async function seedDatabase() {
     'ctv_merge_logs',
     'ctv_events',
     'ctv_members',
+    'ctv_group_leaders',
     'tnv_attendance',
     'tnv_activities',
     'tnv_events',

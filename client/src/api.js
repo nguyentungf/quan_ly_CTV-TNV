@@ -174,6 +174,23 @@ export const api = {
     return res.json();
   },
 
+  assignCtvLeader: async (data) => {
+    const res = await authFetch(`${API_BASE}/ctv/assign-leader`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  removeCtvLeader: async (groupNum, role = '') => {
+    const url = role ? `${API_BASE}/ctv/assign-leader/${groupNum}/${role}` : `${API_BASE}/ctv/assign-leader/${groupNum}`;
+    const res = await authFetch(url, {
+      method: 'DELETE',
+    });
+    return res.json();
+  },
+
   importCtvFile: async (formData) => {
     const token = getToken();
     const headers = {};
@@ -188,6 +205,11 @@ export const api = {
   },
 
   // ===================== TNV APIs =====================
+  getPotentialTnvLeaders: async () => {
+    const res = await authFetch(`${API_BASE}/tnv/potential-leaders`);
+    return res.json();
+  },
+
   getTnvMembers: async (params = {}) => {
     const q = new URLSearchParams(params).toString();
     const res = await authFetch(`${API_BASE}/tnv/members?${q}`);

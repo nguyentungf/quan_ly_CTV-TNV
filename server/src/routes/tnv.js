@@ -850,6 +850,24 @@ router.post('/import-file', requireAdmin, upload.single('file'), async (req, res
   }
 });
 
+// 22. Danh sách TNV tiềm năng để phân công phụ trách nhóm CTV
+router.get('/potential-leaders', requireAuth, async (req, res) => {
+  try {
+    const list = await db.all(`
+      SELECT t.id, t.full_name, t.mssv, t.group_num as tnv_group_num, t.status, t.phone, t.email,
+             cgl.group_num as ctv_assigned_group,
+             cgl.role as ctv_assigned_role
+      FROM tnv_members t
+      LEFT JOIN ctv_group_leaders cgl ON t.id = cgl.tnv_id
+      WHERE t.status = 'Đang hoạt động'
+      ORDER BY t.full_name ASC
+    `);
+    res.json({ success: true, data: list });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi tải danh sách TNV tiềm năng', error: error.message });
+  }
+});
+
 // Giữ lại endpoint /import-csv cũ làm alias tương thích
 router.post('/import-csv', upload.single('file'), (req, res) => {
   return router.handle({ ...req, url: '/import-file' }, res);

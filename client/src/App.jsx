@@ -13,6 +13,7 @@ import CtvAttendanceMatrix from './components/ctv/CtvAttendanceMatrix';
 import CtvMemberModal from './components/ctv/CtvMemberModal';
 import CtvAttitudeActivityModal from './components/ctv/CtvAttitudeActivityModal';
 import CtvMergeGroupModal from './components/ctv/CtvMergeGroupModal';
+import CtvAssignLeaderModal from './components/ctv/CtvAssignLeaderModal';
 
 // TNV Components
 import TnvOverview from './components/tnv/TnvOverview';
@@ -64,6 +65,8 @@ function DashboardContent() {
   const [editingCtvMember, setEditingCtvMember] = useState(null);
   const [ratingCtvMember, setRatingCtvMember] = useState(null);
   const [showCtvMergeModal, setShowCtvMergeModal] = useState(false);
+  const [showAssignLeaderModal, setShowAssignLeaderModal] = useState(false);
+  const [assignLeaderGroup, setAssignLeaderGroup] = useState(1);
 
   const [showTnvMemberModal, setShowTnvMemberModal] = useState(false);
   const [editingTnvMember, setEditingTnvMember] = useState(null);
@@ -287,6 +290,10 @@ function DashboardContent() {
               groups={ctvGroups}
               selectedGroup={ctvGroupFilter}
               onSelectGroup={(g) => setCtvGroupFilter(g)}
+              onOpenAssignLeader={(groupNum) => {
+                setAssignLeaderGroup(groupNum || 1);
+                setShowAssignLeaderModal(true);
+              }}
             />
 
             {/* Sub-view: Member List or Elastic Attendance Matrix */}
@@ -491,6 +498,15 @@ function DashboardContent() {
         isOpen={showCtvMergeModal}
         groups={ctvGroups}
         onClose={() => setShowCtvMergeModal(false)}
+        onSuccess={loadCtvData}
+      />
+
+      {/* CTV Assign Leader Modal */}
+      <CtvAssignLeaderModal
+        isOpen={showAssignLeaderModal}
+        initialGroup={assignLeaderGroup}
+        groups={ctvGroups}
+        onClose={() => setShowAssignLeaderModal(false)}
         onSuccess={loadCtvData}
       />
 

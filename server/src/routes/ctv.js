@@ -215,25 +215,64 @@ router.post('/bulk-action', validateBulkMemberIds, checkGroupPermission('ctv'), 
 // 6. Thống kê tổng quan 8 Nhóm CTV
 router.get('/groups-summary', async (req, res) => {
   try {
+    // Lấy thông tin phân công Nhóm trưởng / Nhóm phó (TNV) từ ctv_group_leaders
+    const assignments = await db.all(`
+      SELECT cgl.group_num, cgl.role, cgl.tnv_id, cgl.note,
+             t.full_name, t.mssv, t.phone, t.email, t.group_num as tnv_group_num
+      FROM ctv_group_leaders cgl
+      JOIN tnv_members t ON cgl.tnv_id = t.id
+    `);
+
+    const assignMap = {};
+    for (const a of assignments) {
+      if (!assignMap[a.group_num]) assignMap[a.group_num] = {};
+      assignMap[a.group_num][a.role] = a;
+    }
+
     const groups = [];
     for (let g = 1; g <= 8; g++) {
       const members = await db.all(`
         SELECT m.*, COALESCE((SELECT SUM(points_delta) FROM ctv_point_logs WHERE member_id = m.id), 0) as total_points
         FROM ctv_members m WHERE m.group_num = ?
       `, [g]);
-      const leader = members.find(m => m.role === 'Nhóm trưởng');
-      const deputy = members.find(m => m.role === 'Nhóm phó');
-      const totalPoints = members.reduce((sum, m) => sum + (m.total_points || 0), 0);
-      const avgPoints = members.length > 0 ? (totalPoints / members.length).toFixed(1) : 0;
+
+      const leaderAssignment = assignMap[g]?.leader;
+      const deputyAssignment = assignMap[g]?.deputy;
+
+      // Fallback nếu chưa có trong ctv_group_leaders nhưng trong ctv_members cũ vẫn còn
+      const ctvLeader = members.find(m => m.role === 'Nhóm trưởng');
+      const ctvDeputy = members.find(m => m.role === 'Nhóm phó');
+
+      const leaderName = leaderAssignment ? leaderAssignment.full_name : (ctvLeader ? ctvLeader.full_name : 'Chưa phân công');
+      const leaderMssv = leaderAssignment ? leaderAssignment.mssv : (ctvLeader ? ctvLeader.mssv : null);
+      const leaderTnvId = leaderAssignment ? leaderAssignment.tnv_id : null;
+      const leaderTnvGroup = leaderAssignment ? leaderAssignment.tnv_group_num : null;
+      const leaderPhone = leaderAssignment ? leaderAssignment.phone : (ctvLeader ? ctvLeader.phone : null);
+      const leaderEmail = leaderAssignment ? leaderAssignment.email : (ctvLeader ? ctvLeader.email : null);
+
+      const deputyName = deputyAssignment ? deputyAssignment.full_name : (ctvDeputy ? ctvDeputy.full_name : null);
+      const deputyMssv = deputyAssignment ? deputyAssignment.mssv : (ctvDeputy ? ctvDeputy.mssv : null);
+      const deputyTnvId = deputyAssignment ? deputyAssignment.tnv_id : null;
+      const deputyTnvGroup = deputyAssignment ? deputyAssignment.tnv_group_num : null;
+      const deputyPhone = deputyAssignment ? deputyAssignment.phone : (ctvDeputy ? ctvDeputy.phone : null);
+      const deputyEmail = deputyAssignment ? deputyAssignment.email : (ctvDeputy ? ctvDeputy.email : null);
 
       groups.push({
         groupNum: g,
         groupName: `Nhóm ${g}`,
         memberCount: members.length,
-        leaderName: leader ? leader.full_name : 'Chưa phân công',
-        leaderMssv: leader ? leader.mssv : null,
-        deputyName: deputy ? deputy.full_name : null,
-        avgPoints: Number(avgPoints),
+        leaderName,
+        leaderMssv,
+        leaderTnvId,
+        leaderTnvGroup,
+        leaderPhone,
+        leaderEmail,
+        deputyName,
+        deputyMssv,
+        deputyTnvId,
+        deputyTnvGroup,
+        deputyPhone,
+        deputyEmail,
         activeCount: members.filter(m => m.status === 'Đang hoạt động').length
       });
     }
@@ -242,6 +281,86 @@ router.get('/groups-summary', async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi thống kê nhóm CTV', error: error.message });
   }
 });
+
+// 6b. Phân công TNV làm Nhóm trưởng / Nhóm phó nhóm CTV
+router.post('/assign-leader', requireAdmin, async (req, res) => {
+  try {
+    const { groupNum, tnvId, role = 'leader', note = '' } = req.body;
+    const g = Number(groupNum);
+    const tid = Number(tnvId);
+
+    if (isNaN(g) || g < 1 || g > 8) {
+      return res.status(400).json({ success: false, message: 'Mã nhóm CTV không hợp lệ (1-8)!' });
+    }
+    if (isNaN(tid) || tid <= 0) {
+      return res.status(400).json({ success: false, message: 'Vui lòng chọn một Tình nguyện viên hợp lệ!' });
+    }
+    if (!['leader', 'deputy'].includes(role)) {
+      return res.status(400).json({ success: false, message: 'Vai trò phân công không hợp lệ (leader hoặc deputy)!' });
+    }
+
+    const tnv = await db.get('SELECT * FROM tnv_members WHERE id = ?', [tid]);
+    if (!tnv) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin Tình nguyện viên này!' });
+    }
+
+    // Kiểm tra quy tắc: 1 TNV chỉ được phụ trách tối đa 1 nhóm CTV (không kiêm nhiệm)
+    const existing = await db.get('SELECT * FROM ctv_group_leaders WHERE tnv_id = ?', [tid]);
+    if (existing && (existing.group_num !== g || existing.role !== role)) {
+      const currentRoleText = existing.role === 'leader' ? 'Nhóm trưởng' : 'Nhóm phó';
+      return res.status(400).json({
+        success: false,
+        message: `Tình nguyện viên ${tnv.full_name} (${tnv.mssv}) hiện đang là ${currentRoleText} của Nhóm ${existing.group_num}! Theo quy định, 1 TNV không được kiêm nhiệm nhiều nhóm CTV.`
+      });
+    }
+
+    await db.transaction(async (txDb) => {
+      // Bỏ phân công của vai trò này trong nhóm g (nếu đã có người trước đó)
+      await txDb.run('DELETE FROM ctv_group_leaders WHERE group_num = ? AND role = ?', [g, role]);
+      // Xóa bản ghi cũ của chính tnvId nếu có (phòng hờ)
+      await txDb.run('DELETE FROM ctv_group_leaders WHERE tnv_id = ?', [tid]);
+      // Thêm phân công mới
+      await txDb.run(`
+        INSERT INTO ctv_group_leaders (group_num, tnv_id, role, note)
+        VALUES (?, ?, ?, ?)
+      `, [g, tid, role, note || '']);
+    });
+
+    const roleName = role === 'leader' ? 'Nhóm trưởng' : 'Nhóm phó';
+    res.json({
+      success: true,
+      message: `Đã phân công TNV ${tnv.full_name} làm ${roleName} cho Nhóm ${g} CTV!`,
+      data: { groupNum: g, tnvId: tid, role, tnvName: tnv.full_name }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi khi phân công TNV phụ trách nhóm CTV', error: error.message });
+  }
+});
+
+// 6c. Hủy phân công phụ trách nhóm CTV
+router.delete('/assign-leader/:groupNum/:role?', requireAdmin, async (req, res) => {
+  try {
+    const { groupNum, role } = req.params;
+    const g = Number(groupNum);
+    if (isNaN(g) || g < 1 || g > 8) {
+      return res.status(400).json({ success: false, message: 'Mã nhóm không hợp lệ!' });
+    }
+
+    if (role) {
+      if (!['leader', 'deputy'].includes(role)) {
+        return res.status(400).json({ success: false, message: 'Vai trò không hợp lệ!' });
+      }
+      await db.run('DELETE FROM ctv_group_leaders WHERE group_num = ? AND role = ?', [g, role]);
+      return res.json({ success: true, message: `Đã hủy phân công ${role === 'leader' ? 'Nhóm trưởng' : 'Nhóm phó'} cho Nhóm ${g}!` });
+    }
+
+    await db.run('DELETE FROM ctv_group_leaders WHERE group_num = ?', [g]);
+    res.json({ success: true, message: `Đã hủy toàn bộ phân công lãnh đạo (TNV) cho Nhóm ${g}!` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi hủy phân công phụ trách', error: error.message });
+  }
+});
+
 
 // 7. Danh sách các buổi họp/sự kiện điểm danh CTV
 router.get('/events', async (req, res) => {
@@ -524,15 +643,49 @@ router.post('/merge-groups', requireAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: `Nhóm ${src} hiện không có thành viên nào để gộp!` });
     }
 
-    const srcLeader = srcMembers.find(m => m.role === 'Nhóm trưởng');
-    const demotedLeaderName = srcLeader ? srcLeader.full_name : 'Không có Nhóm trưởng';
+    // Kiểm tra xem Nhóm B (src) có Nhóm trưởng TNV trong ctv_group_leaders không
+    const srcLeaderAssignment = await db.get(`
+      SELECT cgl.*, t.full_name
+      FROM ctv_group_leaders cgl
+      JOIN tnv_members t ON cgl.tnv_id = t.id
+      WHERE cgl.group_num = ? AND cgl.role = 'leader'
+    `, [src]);
+
+    // Fallback: Tìm trong ctv_members cũ nếu có
+    const srcLegacyLeader = srcMembers.find(m => m.role === 'Nhóm trưởng');
+
+    let demotedLeaderName = 'Không có Nhóm trưởng';
+    if (srcLeaderAssignment) {
+      demotedLeaderName = `${srcLeaderAssignment.full_name} (TNV)`;
+    } else if (srcLegacyLeader) {
+      demotedLeaderName = srcLegacyLeader.full_name;
+    }
 
     await db.transaction(async (txDb) => {
-      if (srcLeader) {
-        await txDb.run(`UPDATE ctv_members SET group_num = ?, role = 'Nhóm phó' WHERE id = ?`, [tgt, srcLeader.id]);
+      // 1. Chuyển nhóm trưởng TNV của src thành nhóm phó của tgt trong ctv_group_leaders
+      if (srcLeaderAssignment) {
+        // Gỡ bỏ nhóm phó cũ của tgt (nếu có) để nhường vị trí cho nhóm trưởng cũ của src
+        await txDb.run('DELETE FROM ctv_group_leaders WHERE group_num = ? AND role = ?', [tgt, 'deputy']);
+        // Xóa tất cả phân công của nhóm src
+        await txDb.run('DELETE FROM ctv_group_leaders WHERE group_num = ?', [src]);
+        // Gán TNV này làm Nhóm phó nhóm A (tgt)
+        await txDb.run(`
+          INSERT INTO ctv_group_leaders (group_num, tnv_id, role, note)
+          VALUES (?, ?, 'deputy', ?)
+        `, [tgt, srcLeaderAssignment.tnv_id, notes || `Chuyển từ Nhóm trưởng Nhóm ${src} sang Nhóm phó khi sáp nhập`]);
+      } else {
+        // Nếu không có TNV leader nhưng có CTV giữ chức Nhóm trưởng cũ
+        if (srcLegacyLeader) {
+          await txDb.run(`UPDATE ctv_members SET role = 'Nhóm phó' WHERE id = ?`, [srcLegacyLeader.id]);
+        }
+        // Xóa bất kỳ phân công còn lại của nhóm src nếu có
+        await txDb.run('DELETE FROM ctv_group_leaders WHERE group_num = ?', [src]);
       }
-      await txDb.run(`UPDATE ctv_members SET group_num = ? WHERE group_num = ? AND id != ?`, [tgt, src, srcLeader ? srcLeader.id : -1]);
 
+      // 2. Chuyển toàn bộ thành viên CTV từ nhóm src sang nhóm tgt
+      await txDb.run(`UPDATE ctv_members SET group_num = ? WHERE group_num = ?`, [tgt, src]);
+
+      // 3. Ghi log lịch sử gộp nhóm
       await txDb.run(`
         INSERT INTO ctv_merge_logs (source_group, target_group, demoted_leader_name, merged_count, note)
         VALUES (?, ?, ?, ?, ?)
@@ -576,9 +729,21 @@ async function getExportRows() {
     ORDER BY m.group_num ASC, CASE m.role WHEN 'Nhóm trưởng' THEN 1 WHEN 'Nhóm phó' THEN 2 ELSE 3 END, m.mssv ASC
   `);
 
+  // Lấy Nhóm trưởng từ ctv_group_leaders (TNV phụ trách)
+  const leaderAssignments = await db.all(`
+    SELECT cgl.group_num, t.full_name
+    FROM ctv_group_leaders cgl
+    JOIN tnv_members t ON cgl.tnv_id = t.id
+    WHERE cgl.role = 'leader'
+  `);
   const groupLeaders = {};
+  for (const a of leaderAssignments) {
+    groupLeaders[a.group_num] = a.full_name;
+  }
+
+  // Fallback: nếu nhóm chưa có trong ctv_group_leaders thì kiểm tra ctv_members cũ
   for (const m of activeMembers) {
-    if (m.role === 'Nhóm trưởng') {
+    if (m.role === 'Nhóm trưởng' && !groupLeaders[m.group_num]) {
       groupLeaders[m.group_num] = m.full_name;
     }
   }

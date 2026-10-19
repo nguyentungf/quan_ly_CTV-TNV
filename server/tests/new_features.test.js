@@ -412,4 +412,110 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     await db.run('DELETE FROM ctv_members WHERE id IN (?, ?)', [m1.id, m2.id]);
     await db.run('DELETE FROM ctv_merge_logs WHERE id = ?', [auditLog.id]);
   });
+
+  // Nghiệp vụ: Phân công TNV làm Nhóm trưởng/Nhóm phó CTV, Chặn kiêm nhiệm & Tự động hạ cấp khi gộp nhóm
+  it('Nghiệp vụ Phân công TNV phụ trách nhóm CTV: Chặn kiêm nhiệm & Chuyển trưởng B thành phó A khi gộp', async () => {
+    // 1. Tạo 2 TNV test
+    const tnv1 = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, total_points, status)
+      VALUES (?, 'TNV Test Leader 1', 1, 'Thành viên', 'Nam', 'ET1', '0988111222', 'tnv1@sis.edu.vn', 50, 'Đang hoạt động')
+      RETURNING *
+    `, [`tnv_test_${Date.now()}_1`]);
+
+    const tnv2 = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, total_points, status)
+      VALUES (?, 'TNV Test Leader 2', 2, 'Thành viên', 'Nữ', 'ET2', '0988333444', 'tnv2@sis.edu.vn', 60, 'Đang hoạt động')
+      RETURNING *
+    `, [`tnv_test_${Date.now()}_2`]);
+
+    // 2. Kiểm tra GET /api/tnv/potential-leaders
+    const potentialRes = await request(app)
+      .get('/api/tnv/potential-leaders')
+      .set('Authorization', `Bearer ${leaderToken}`);
+    expect(potentialRes.status).toBe(200);
+    expect(potentialRes.body.success).toBe(true);
+    expect(Array.isArray(potentialRes.body.data)).toBe(true);
+
+    // 3. Phân công TNV: Không phải Admin thì bị 403
+    const forbiddenAssign = await request(app)
+      .post('/api/ctv/assign-leader')
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({ groupNum: 6, tnvId: tnv1.id, role: 'leader' });
+    expect(forbiddenAssign.status).toBe(403);
+
+    // 4. Admin phân công TNV1 làm Nhóm trưởng Nhóm 6
+    const assignRes1 = await request(app)
+      .post('/api/ctv/assign-leader')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ groupNum: 6, tnvId: tnv1.id, role: 'leader', note: 'Phụ trách nhóm 6' });
+    expect(assignRes1.status).toBe(200);
+    expect(assignRes1.body.success).toBe(true);
+
+    // 5. Kiểm tra groups-summary của Nhóm 6
+    const summaryRes1 = await request(app).get('/api/ctv/groups-summary');
+    expect(summaryRes1.status).toBe(200);
+    const group6 = summaryRes1.body.data.find(g => g.groupNum === 6);
+    expect(group6.leaderName).toBe(tnv1.full_name);
+    expect(group6.leaderTnvId).toBe(tnv1.id);
+
+    // 6. Kiểm tra quy tắc KHÔNG KIÊM NHIỆM: Cố tình phân công TNV1 phụ trách thêm Nhóm 7 -> Phải bị 400
+    const conflictAssign = await request(app)
+      .post('/api/ctv/assign-leader')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ groupNum: 7, tnvId: tnv1.id, role: 'leader' });
+    expect(conflictAssign.status).toBe(400);
+    expect(conflictAssign.body.message).toContain('không được kiêm nhiệm');
+
+    // 7. Admin phân công TNV2 làm Nhóm trưởng Nhóm 5
+    const assignRes2 = await request(app)
+      .post('/api/ctv/assign-leader')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ groupNum: 5, tnvId: tnv2.id, role: 'leader' });
+    expect(assignRes2.status).toBe(200);
+
+    // 8. Tạo 1 thành viên CTV ở nhóm 6 để đủ điều kiện gộp
+    const ctvIn6 = await db.get(`
+      INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
+      VALUES (?, 'CTV Nhóm 6', 6, 'Thành viên', 'Nam', 'ET1', '0919999888', 'ctv6@sis', 0, 0, 0, 'Đang hoạt động')
+      RETURNING *
+    `, [`ctv_g6_${Date.now()}`]);
+
+    // 9. Thực hiện sáp nhập Nhóm 6 (có Trưởng là TNV1) vào Nhóm 5 (có Trưởng là TNV2)
+    const mergeRes = await request(app)
+      .post('/api/ctv/merge-groups')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ sourceGroup: 6, targetGroup: 5, notes: 'Test sáp nhập chuyển trưởng B thành phó A' });
+    expect(mergeRes.status).toBe(200);
+    expect(mergeRes.body.success).toBe(true);
+
+    // 10. Kiểm tra sau khi sáp nhập:
+    // - Nhóm 5 phải có Nhóm trưởng là TNV2 và Nhóm phó là TNV1!
+    // - Nhóm 6 không còn phân công lãnh đạo.
+    const summaryRes2 = await request(app).get('/api/ctv/groups-summary');
+    const updatedGroup5 = summaryRes2.body.data.find(g => g.groupNum === 5);
+    const updatedGroup6 = summaryRes2.body.data.find(g => g.groupNum === 6);
+
+    expect(updatedGroup5.leaderTnvId).toBe(tnv2.id);
+    expect(updatedGroup5.leaderName).toBe(tnv2.full_name);
+    expect(updatedGroup5.deputyTnvId).toBe(tnv1.id);
+    expect(updatedGroup5.deputyName).toBe(tnv1.full_name);
+    expect(updatedGroup6.leaderTnvId).toBeNull();
+    expect(updatedGroup6.leaderName).toBe('Chưa phân công');
+
+    // 11. Kiểm tra DELETE /api/ctv/assign-leader/:groupNum/:role
+    const deleteDeputyRes = await request(app)
+      .delete('/api/ctv/assign-leader/5/deputy')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(deleteDeputyRes.status).toBe(200);
+
+    const summaryRes3 = await request(app).get('/api/ctv/groups-summary');
+    const group5AfterDelete = summaryRes3.body.data.find(g => g.groupNum === 5);
+    expect(group5AfterDelete.deputyTnvId).toBeNull();
+    expect(group5AfterDelete.deputyName).toBeNull();
+
+    // Cleanup
+    await db.run('DELETE FROM ctv_group_leaders WHERE group_num IN (5, 6)');
+    await db.run('DELETE FROM ctv_members WHERE id = ?', [ctvIn6.id]);
+    await db.run('DELETE FROM tnv_members WHERE id IN (?, ?)', [tnv1.id, tnv2.id]);
+  });
 });

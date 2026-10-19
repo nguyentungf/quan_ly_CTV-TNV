@@ -182,17 +182,22 @@ export default function CtvMemberModal({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Chức vụ <span className="text-rose-500">*</span>
+                Chức vụ trong nhóm <span className="text-rose-500">*</span>
               </label>
               <select
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                 className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
               >
-                <option value="Nhóm trưởng">Nhóm trưởng</option>
-                <option value="Nhóm phó">Nhóm phó</option>
                 <option value="Thành viên">Thành viên</option>
+                <option value="Nhóm phó">Nhóm phó</option>
+                {formData.role === 'Nhóm trưởng' && (
+                  <option value="Nhóm trưởng">Nhóm trưởng (Cũ - Đề xuất phân công TNV)</option>
+                )}
               </select>
+              <p className="text-[10px] text-slate-500 mt-1">
+                💡 Nhóm trưởng do Tình nguyện viên (TNV) phụ trách độc lập tại mục Tổng quan 8 nhóm.
+              </p>
             </div>
 
             <div>
