@@ -157,11 +157,14 @@ export const api = {
     return res.json();
   },
 
-  mergeCtvGroups: async (data) => {
+  mergeCtvGroups: async (sourceGroupOrData, targetGroup, notes) => {
+    const payload = typeof sourceGroupOrData === 'object' && sourceGroupOrData !== null
+      ? sourceGroupOrData
+      : { sourceGroup: sourceGroupOrData, targetGroup, notes };
     const res = await authFetch(`${API_BASE}/ctv/merge-groups`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
     return res.json();
   },

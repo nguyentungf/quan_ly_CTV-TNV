@@ -65,18 +65,23 @@ export default function CtvMergeGroupModal({
   const handleExecuteMerge = async () => {
     setLoading(true);
     try {
-      const res = await api.mergeCtvGroups(sourceGroup, targetGroup, notes);
-      if (res.success) {
-        addToast(res.message, 'success', 5000);
+      const res = await api.mergeCtvGroups({
+        sourceGroup: Number(sourceGroup),
+        targetGroup: Number(targetGroup),
+        notes: notes ? notes.trim() : ''
+      });
+      if (res && res.success) {
+        addToast(res.message || 'Sáp nhập nhóm CTV thành công!', 'success', 5000);
         setShowConfirm(false);
         onSuccess();
         loadAuditLogs();
         setNotes('');
       } else {
-        addToast(res.message || 'Lỗi khi gộp nhóm', 'error');
+        addToast(res?.message || 'Lỗi khi gộp nhóm', 'error');
       }
     } catch (err) {
-      addToast('Lỗi kết nối máy chủ khi gộp nhóm', 'error');
+      console.error('Merge CTV groups error:', err);
+      addToast(err?.message || 'Lỗi kết nối máy chủ khi gộp nhóm', 'error');
     } finally {
       setLoading(false);
     }

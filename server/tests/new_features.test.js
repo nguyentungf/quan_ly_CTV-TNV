@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createTestApp } from './helpers/app.js';
 import { generateTestToken } from './helpers/token.js';
 import { db, initSchema } from '../src/db/index.js';
+import ctvRouter from '../src/routes/ctv.js';
 import campaignsRouter from '../src/routes/campaigns.js';
 import tnvRouter from '../src/routes/tnv.js';
 import evaluationsRouter from '../src/routes/evaluations.js';
@@ -15,6 +16,7 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
   beforeAll(async () => {
     await initSchema();
     app = createTestApp();
+    app.use('/api/ctv', ctvRouter);
     app.use('/api/campaigns', campaignsRouter);
     app.use('/api/tnv', tnvRouter);
     app.use('/api/evaluations', evaluationsRouter);
@@ -348,5 +350,66 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     await db.run('DELETE FROM ctv_members WHERE id = ?', [ctvUser.id]);
     await db.run('DELETE FROM tnv_members WHERE id = ?', [tnvUser.id]);
     await db.run('DELETE FROM tnv_activities WHERE member_id = ?', [tnvUser.id]);
+  });
+
+  // Nghiệp vụ: Sáp nhập nhóm CTV (Merge Groups)
+  it('Nghiệp vụ Sáp nhập nhóm CTV: Admin sáp nhập thành công nhóm lớn vào nhóm nhỏ và lưu audit log', async () => {
+    // 1. Chuẩn bị 2 CTV thuộc nhóm 8 (nhóm nguồn)
+    const mssv1 = `ctv_m_${Date.now()}_1`;
+    const mssv2 = `ctv_m_${Date.now()}_2`;
+    const m1 = await db.get(`
+      INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
+      VALUES (?, 'CTV Nguồn 1', 8, 'Thành viên', 'Nam', 'ET1', '0911', 'm1@sis', 0, 0, 0, 'Đang hoạt động')
+      RETURNING *
+    `, [mssv1]);
+    const m2 = await db.get(`
+      INSERT INTO ctv_members (mssv, full_name, group_num, role, gender, class_name, phone, email, attitude_points, activity_points, total_points, status)
+      VALUES (?, 'CTV Nguồn 2', 8, 'Thành viên', 'Nữ', 'ET2', '0922', 'm2@sis', 0, 0, 0, 'Đang hoạt động')
+      RETURNING *
+    `, [mssv2]);
+
+    // 2. Không cho phép gộp nếu không phải Admin (403)
+    const nonAdminRes = await request(app)
+      .post('/api/ctv/merge-groups')
+      .set('Authorization', `Bearer ${leaderToken}`)
+      .send({ sourceGroup: 8, targetGroup: 1, notes: 'Thử gộp bởi Leader' });
+    expect(nonAdminRes.status).toBe(403);
+
+    // 3. Không cho phép gộp nhóm nhỏ vào nhóm lớn (400)
+    const invalidOrderRes = await request(app)
+      .post('/api/ctv/merge-groups')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ sourceGroup: 1, targetGroup: 8 });
+    expect(invalidOrderRes.status).toBe(400);
+
+    // 4. Admin thực hiện sáp nhập Nhóm 8 vào Nhóm 1 thành công (200)
+    const mergeRes = await request(app)
+      .post('/api/ctv/merge-groups')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ sourceGroup: 8, targetGroup: 1, notes: 'Sáp nhập tối ưu nhân sự test' });
+
+    expect(mergeRes.status).toBe(200);
+    expect(mergeRes.body.success).toBe(true);
+    expect(mergeRes.body.details.sourceGroup).toBe(8);
+    expect(mergeRes.body.details.targetGroup).toBe(1);
+
+    // 5. Kiểm tra thành viên đã được chuyển sang nhóm 1
+    const updatedM1 = await db.get('SELECT group_num FROM ctv_members WHERE id = ?', [m1.id]);
+    const updatedM2 = await db.get('SELECT group_num FROM ctv_members WHERE id = ?', [m2.id]);
+    expect(updatedM1.group_num).toBe(1);
+    expect(updatedM2.group_num).toBe(1);
+
+    // 6. Kiểm tra audit log đã được ghi nhận trong ctv_merge_logs
+    const auditLog = await db.get(
+      'SELECT * FROM ctv_merge_logs WHERE source_group = 8 AND target_group = 1 ORDER BY id DESC LIMIT 1'
+    );
+    expect(auditLog).toBeDefined();
+    expect(auditLog.source_group).toBe(8);
+    expect(auditLog.target_group).toBe(1);
+    expect(auditLog.note).toContain('Sáp nhập tối ưu nhân sự test');
+
+    // Cleanup
+    await db.run('DELETE FROM ctv_members WHERE id IN (?, ?)', [m1.id, m2.id]);
+    await db.run('DELETE FROM ctv_merge_logs WHERE id = ?', [auditLog.id]);
   });
 });
