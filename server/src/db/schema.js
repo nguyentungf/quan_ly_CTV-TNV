@@ -114,6 +114,7 @@ export const campaigns = sqliteTable('campaigns', {
   targetType: text('target_type').notNull().default('all'), // 'all' | 'ctv' | 'tnv'
   status: text('status').notNull().default('dang_mo_dang_ky'), // 'dang_mo_dang_ky' | 'dang_tien_hanh' | 'da_hoan_thanh'
   shifts: text('shifts').default('[]'), // Danh sách Kíp (JSON array: [{ id, name, time }])
+  requireConfirm: integer('require_confirm').notNull().default(0), // 0: Không yêu cầu, 1: Yêu cầu toàn bộ TNV confirm
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -130,3 +131,16 @@ export const campaignRegistrations = sqliteTable('campaign_registrations', {
   pointsAwarded: integer('points_awarded').notNull().default(0), // Điểm đã cộng
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const campaignConfirmations = sqliteTable('campaign_confirmations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  campaignId: integer('campaign_id').notNull().references(() => campaigns.id, { onDelete: 'cascade' }),
+  memberId: integer('member_id').notNull().references(() => tnvMembers.id, { onDelete: 'cascade' }),
+  groupNum: integer('group_num').notNull(),
+  isConfirmed: integer('is_confirmed').notNull().default(0), // 0: Chưa confirm / không confirm, 1: Đã confirm
+  confirmedBy: text('confirmed_by').default(''),
+  confirmedAt: text('confirmed_at').default(''),
+  isPenalized: integer('is_penalized').notNull().default(0), // 0: Chưa chốt phạt, 1: Đã chốt phạt -20đ
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+

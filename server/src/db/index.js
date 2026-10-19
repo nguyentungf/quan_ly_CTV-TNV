@@ -405,6 +405,19 @@ export async function initSchema() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(period, member_type, member_id)
       );
+
+      CREATE TABLE IF NOT EXISTS campaign_confirmations (
+        id SERIAL PRIMARY KEY,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        member_id INTEGER NOT NULL REFERENCES tnv_members(id) ON DELETE CASCADE,
+        group_num INTEGER NOT NULL,
+        is_confirmed INTEGER NOT NULL DEFAULT 0,
+        confirmed_by VARCHAR(255) DEFAULT '',
+        confirmed_at VARCHAR(50) DEFAULT '',
+        is_penalized INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(campaign_id, member_id)
+      );
     `);
     try { await pool.query(`ALTER TABLE ctv_members ADD COLUMN IF NOT EXISTS gender VARCHAR(10) DEFAULT 'Nam'`); } catch (e) {}
     try { await pool.query(`ALTER TABLE ctv_members ADD COLUMN IF NOT EXISTS class_name VARCHAR(100) DEFAULT ''`); } catch (e) {}
@@ -412,6 +425,7 @@ export async function initSchema() {
     try { await pool.query(`ALTER TABLE tnv_members ADD COLUMN IF NOT EXISTS class_name VARCHAR(100) DEFAULT ''`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS shifts TEXT DEFAULT '[]'`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS required_participants INTEGER DEFAULT 0`); } catch (e) {}
+    try { await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS require_confirm INTEGER DEFAULT 0`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS shift_id VARCHAR(100) DEFAULT ''`); } catch (e) {}
     try { await pool.query(`ALTER TABLE campaign_registrations ADD COLUMN IF NOT EXISTS shift_name VARCHAR(255) DEFAULT ''`); } catch (e) {}
     console.log('✅ Khởi tạo cấu trúc bảng PostgreSQL hoàn tất!');
@@ -584,6 +598,19 @@ export async function initSchema() {
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(period, member_type, member_id)
       );
+
+      CREATE TABLE IF NOT EXISTS campaign_confirmations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+        member_id INTEGER NOT NULL REFERENCES tnv_members(id) ON DELETE CASCADE,
+        group_num INTEGER NOT NULL,
+        is_confirmed INTEGER NOT NULL DEFAULT 0,
+        confirmed_by TEXT DEFAULT '',
+        confirmed_at TEXT DEFAULT '',
+        is_penalized INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(campaign_id, member_id)
+      );
     `);
 
     // Migration an toàn các cột mới nếu đã có file sqlite cũ
@@ -593,6 +620,7 @@ export async function initSchema() {
     try { sqlite.exec(`ALTER TABLE tnv_members ADD COLUMN class_name TEXT DEFAULT ''`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaigns ADD COLUMN shifts TEXT DEFAULT '[]'`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaigns ADD COLUMN required_participants INTEGER DEFAULT 0`); } catch (e) {}
+    try { sqlite.exec(`ALTER TABLE campaigns ADD COLUMN require_confirm INTEGER DEFAULT 0`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN shift_id TEXT DEFAULT ''`); } catch (e) {}
     try { sqlite.exec(`ALTER TABLE campaign_registrations ADD COLUMN shift_name TEXT DEFAULT ''`); } catch (e) {}
   }

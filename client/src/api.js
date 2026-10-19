@@ -480,6 +480,30 @@ export const api = {
     return res.json();
   },
 
+  getCampaignConfirmations: async (campaignId, params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/confirmations?${q}`);
+    return res.json();
+  },
+
+  toggleCampaignConfirmation: async (campaignId, data) => {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/confirmations/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  finalizeCampaignConfirmations: async (campaignId, data) => {
+    const res = await authFetch(`${API_BASE}/campaigns/${campaignId}/confirmations/finalize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
   // ===================== EVALUATIONS APIs =====================
   getEvaluationRubric: async () => {
     const res = await authFetch(`${API_BASE}/evaluations/rubric`);

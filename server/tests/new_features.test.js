@@ -724,5 +724,152 @@ describe('Kiểm thử 4 Nghiệp Vụ Mới', () => {
     // Cleanup
     await db.run('DELETE FROM tnv_members WHERE id = ?', [tnv.id]);
   });
+
+  it('Nghiệp vụ 6: Check Confirm hoạt động và Phạt trừ 20 điểm cho TNV không xác nhận', async () => {
+    // 1. Tạo campaign có yêu cầu Check Confirm (require_confirm = 1)
+    const campRes = await request(app)
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Chiến Dịch Tiếp Sức Mùa Thi 2026',
+        description: 'Bắt buộc toàn bộ TNV xác nhận tham gia',
+        location: 'Trường ĐH Bách Khoa',
+        eventDate: '2026-06-25',
+        points: 20,
+        targetType: 'tnv',
+        status: 'dang_mo_dang_ky',
+        requireConfirm: 1
+      });
+
+    expect(campRes.status).toBe(200);
+    expect(campRes.body.success).toBe(true);
+    const campaignId = campRes.body.data.id;
+    expect(campRes.body.data.require_confirm).toBe(1);
+
+    // 2. Tạo 2 TNV Nhóm 3 và 1 TNV Nhóm 4
+    const ts = Date.now();
+    const tnvA = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, total_points, status)
+      VALUES (?, 'TNV Confirm Yes', 3, 'Thành viên', 50, 'Đang hoạt động')
+      RETURNING *
+    `, [`tnv_test_conf_a_${ts}`]);
+
+    const tnvB = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, total_points, status)
+      VALUES (?, 'TNV Confirm No', 3, 'Thành viên', 50, 'Đang hoạt động')
+      RETURNING *
+    `, [`tnv_test_conf_b_${ts}`]);
+
+    const tnvC = await db.get(`
+      INSERT INTO tnv_members (mssv, full_name, group_num, role, total_points, status)
+      VALUES (?, 'TNV Nhóm Khác', 4, 'Thành viên', 30, 'Đang hoạt động')
+      RETURNING *
+    `, [`tnv_test_conf_c_${ts}`]);
+
+    // Thêm điểm hoạt động ban đầu cho tnvA, tnvB, tnvC để total_points đồng bộ chuẩn
+    await db.run("INSERT INTO tnv_activities (member_id, category, points, note) VALUES (?, 'Điểm gốc', 50, 'Gốc')", [tnvA.id]);
+    await db.run("INSERT INTO tnv_activities (member_id, category, points, note) VALUES (?, 'Điểm gốc', 50, 'Gốc')", [tnvB.id]);
+    await db.run("INSERT INTO tnv_activities (member_id, category, points, note) VALUES (?, 'Điểm gốc', 30, 'Gốc')", [tnvC.id]);
+
+    // Token cho Leader Nhóm 3
+    const leaderTokenG3 = generateTestToken({
+      role: 'leader',
+      targetType: 'tnv',
+      groupNum: 3,
+      displayName: 'Leader Nhóm 3'
+    });
+
+    // 3. Lấy danh sách xác nhận ban đầu
+    const getConfRes = await request(app)
+      .get(`/api/campaigns/${campaignId}/confirmations`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`);
+    expect(getConfRes.status).toBe(200);
+    expect(getConfRes.body.success).toBe(true);
+    expect(getConfRes.body.summary).toBeDefined();
+
+    // 4. Leader Nhóm 3 cố tình tick confirm cho tnvC (thuộc Nhóm 4) -> 403 Forbidden
+    const forbiddenToggleRes = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/toggle`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`)
+      .send({ memberId: tnvC.id, isConfirmed: true });
+    expect(forbiddenToggleRes.status).toBe(403);
+
+    // 5. Leader Nhóm 3 tick confirm cho tnvA (thuộc Nhóm 3) -> 200 OK
+    const successToggleRes = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/toggle`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`)
+      .send({ memberId: tnvA.id, isConfirmed: true });
+    expect(successToggleRes.status).toBe(200);
+    expect(successToggleRes.body.success).toBe(true);
+    expect(successToggleRes.body.isConfirmed).toBe(1);
+
+    // Kiểm tra bản ghi confirm trong DB
+    const confRecordA = await db.get(
+      'SELECT * FROM campaign_confirmations WHERE campaign_id = ? AND member_id = ?',
+      [campaignId, tnvA.id]
+    );
+    expect(confRecordA).toBeDefined();
+    expect(confRecordA.is_confirmed).toBe(1);
+    expect(confRecordA.confirmed_by).toBe('Leader Nhóm 3');
+
+    // 6. Leader Nhóm 3 cố tình chốt danh sách Nhóm 4 hoặc 'all' -> 403 Forbidden
+    const forbiddenFinalizeRes = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/finalize`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`)
+      .send({ groupNum: 'all' });
+    expect(forbiddenFinalizeRes.status).toBe(403);
+
+    // 7. Leader Nhóm 3 chốt danh sách Nhóm 3
+    const finalizeG3Res = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/finalize`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`)
+      .send({ groupNum: 3 });
+    expect(finalizeG3Res.status).toBe(200);
+    expect(finalizeG3Res.body.success).toBe(true);
+    // tnvB chưa confirm nên sẽ bị phạt, tnvA đã confirm nên không phạt
+    expect(finalizeG3Res.body.confirmedCount).toBeGreaterThanOrEqual(1);
+    expect(finalizeG3Res.body.newlyPenalizedCount).toBeGreaterThanOrEqual(1);
+
+    // Kiểm tra điểm tnvA: vẫn là 50 điểm (không bị trừ)
+    const checkTnvA = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [tnvA.id]);
+    expect(checkTnvA.total_points).toBe(50);
+
+    // Kiểm tra điểm tnvB: từ 50 giảm 20 còn 30 điểm!
+    const checkTnvB = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [tnvB.id]);
+    expect(checkTnvB.total_points).toBe(30);
+
+    // Kiểm tra bản ghi activity phạt của tnvB
+    const penaltyAct = await db.get(
+      "SELECT * FROM tnv_activities WHERE member_id = ? AND category = 'Kỷ luật / Không confirm'",
+      [tnvB.id]
+    );
+    expect(penaltyAct).toBeDefined();
+    expect(penaltyAct.points).toBe(-20);
+    expect(penaltyAct.note).toContain('Không xác nhận hoạt động');
+
+    // Kiểm tra trạng thái is_penalized của tnvB trong campaign_confirmations
+    const confRecordB = await db.get(
+      'SELECT * FROM campaign_confirmations WHERE campaign_id = ? AND member_id = ?',
+      [campaignId, tnvB.id]
+    );
+    expect(confRecordB).toBeDefined();
+    expect(confRecordB.is_penalized).toBe(1);
+
+    // 8. Chốt lại lần 2 (Idempotency): không phạt đúp tnvB
+    const reFinalizeG3Res = await request(app)
+      .post(`/api/campaigns/${campaignId}/confirmations/finalize`)
+      .set('Authorization', `Bearer ${leaderTokenG3}`)
+      .send({ groupNum: 3 });
+    expect(reFinalizeG3Res.status).toBe(200);
+    expect(reFinalizeG3Res.body.newlyPenalizedCount).toBe(0); // Không ai bị phạt thêm
+    const reCheckTnvB = await db.get('SELECT total_points FROM tnv_members WHERE id = ?', [tnvB.id]);
+    expect(reCheckTnvB.total_points).toBe(30); // Vẫn là 30, không bị trừ thêm lần nữa
+
+    // Cleanup
+    await db.run('DELETE FROM campaign_confirmations WHERE campaign_id = ?', [campaignId]);
+    await db.run('DELETE FROM campaigns WHERE id = ?', [campaignId]);
+    await db.run('DELETE FROM tnv_activities WHERE member_id IN (?, ?, ?)', [tnvA.id, tnvB.id, tnvC.id]);
+    await db.run('DELETE FROM tnv_members WHERE id IN (?, ?, ?)', [tnvA.id, tnvB.id, tnvC.id]);
+  });
 });
 

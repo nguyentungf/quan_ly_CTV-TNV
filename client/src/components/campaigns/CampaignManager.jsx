@@ -23,7 +23,8 @@ import {
   ChevronRight,
   ShieldCheck,
   UserCheck,
-  Lock
+  Lock,
+  AlertTriangle
 } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
@@ -45,6 +46,16 @@ export default function CampaignManager() {
   const [regGroupFilter, setRegGroupFilter] = useState('all');
   const [regTypeFilter, setRegTypeFilter] = useState('all');
   const [regSearch, setRegSearch] = useState('');
+
+  // Check Confirm TNV state
+  const [activeDetailTab, setActiveDetailTab] = useState('registrations'); // 'registrations' | 'confirmations'
+  const [confirmations, setConfirmations] = useState([]);
+  const [loadingConf, setLoadingConf] = useState(false);
+  const [confirmSummary, setConfirmSummary] = useState({ totalCount: 0, confirmedCount: 0, unconfirmedCount: 0, penalizedCount: 0 });
+  const [confGroupFilter, setConfGroupFilter] = useState('all');
+  const [confSearch, setConfSearch] = useState('');
+  const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
 
   // Modals
   const [showEditModal, setShowEditModal] = useState(false);
@@ -88,6 +99,7 @@ export default function CampaignManager() {
     targetType: 'all',
     status: 'dang_mo_dang_ky',
     shifts: [],
+    requireConfirm: false,
   });
 
   // Helper lấy danh sách kíp từ chiến dịch
@@ -107,6 +119,9 @@ export default function CampaignManager() {
       setQuickGroupType(user.targetType);
       setQuickGroupNum(Number(user.groupNum));
       setQuickLeaderName(user.displayName || `Nhóm trưởng Nhóm ${user.groupNum}`);
+      if (user.targetType === 'tnv') {
+        setConfGroupFilter(String(user.groupNum));
+      }
     }
   }, [isLeader, user]);
 
@@ -131,7 +146,11 @@ export default function CampaignManager() {
   const handleOpenDetail = (camp) => {
     setActiveCampaign(camp);
     setSelectedRegIds([]);
+    setActiveDetailTab('registrations');
     loadRegistrations(camp.id);
+    if (Number(camp.require_confirm ?? camp.requireConfirm) === 1) {
+      loadConfirmations(camp.id);
+    }
   };
 
   const loadRegistrations = async (campId) => {
@@ -148,6 +167,106 @@ export default function CampaignManager() {
       addToast('Lỗi khi tải danh sách đăng ký', 'error');
     } finally {
       setLoadingRegs(false);
+    }
+  };
+
+  const loadConfirmations = async (campId, group, search) => {
+    if (!campId) return;
+    setLoadingConf(true);
+    try {
+      const g = group !== undefined ? group : confGroupFilter;
+      const s = search !== undefined ? search : confSearch;
+      const res = await api.getCampaignConfirmations(campId, {
+        group: g,
+        search: s,
+      });
+      if (res.success) {
+        setConfirmations(res.data || []);
+        setConfirmSummary(res.summary || {
+          totalCount: 0,
+          confirmedCount: 0,
+          unconfirmedCount: 0,
+          penalizedCount: 0,
+        });
+      }
+    } catch (err) {
+      addToast('Lỗi khi tải danh sách check confirm TNV', 'error');
+    } finally {
+      setLoadingConf(false);
+    }
+  };
+
+  const handleToggleConfirm = async (member) => {
+    if (!activeCampaign) return;
+    const canEdit = isAdmin || (isLeader && user?.targetType === 'tnv' && Number(user?.groupNum) === Number(member.group_num));
+    if (!canEdit) {
+      addToast(`Bạn không có quyền xác nhận cho thành viên Nhóm ${member.group_num}!`, 'warning');
+      return;
+    }
+
+    const nextStatus = Number(member.is_confirmed) === 1 ? 0 : 1;
+
+    // Optimistic update
+    setConfirmations((prev) =>
+      prev.map((m) =>
+        m.member_id === member.member_id
+          ? {
+              ...m,
+              is_confirmed: nextStatus,
+              confirmed_by: nextStatus === 1 ? (user?.displayName || 'Nhóm trưởng') : '',
+              confirmed_at: nextStatus === 1 ? new Date().toISOString() : '',
+            }
+          : m
+      )
+    );
+
+    setConfirmSummary((prev) => ({
+      ...prev,
+      confirmedCount: nextStatus === 1 ? prev.confirmedCount + 1 : Math.max(0, prev.confirmedCount - 1),
+      unconfirmedCount: nextStatus === 1 ? Math.max(0, prev.unconfirmedCount - 1) : prev.unconfirmedCount + 1,
+    }));
+
+    try {
+      const res = await api.toggleCampaignConfirmation(activeCampaign.id, {
+        memberId: member.member_id,
+        isConfirmed: nextStatus === 1,
+      });
+      if (res.success) {
+        addToast(res.message, 'success');
+        loadConfirmations(activeCampaign.id);
+      } else {
+        addToast(res.message || 'Lỗi cập nhật xác nhận', 'error');
+        loadConfirmations(activeCampaign.id);
+      }
+    } catch (err) {
+      addToast('Lỗi kết nối máy chủ', 'error');
+      loadConfirmations(activeCampaign.id);
+    }
+  };
+
+  const handleFinalizeConfirm = async () => {
+    if (!activeCampaign) return;
+    const targetGroup = isLeader && user?.targetType === 'tnv'
+      ? user.groupNum
+      : (confGroupFilter !== 'all' ? confGroupFilter : 'all');
+
+    setFinalizing(true);
+    try {
+      const res = await api.finalizeCampaignConfirmations(activeCampaign.id, {
+        groupNum: targetGroup,
+      });
+      if (res.success) {
+        addToast(res.message, 'success');
+        setShowFinalizeModal(false);
+        loadConfirmations(activeCampaign.id);
+        loadCampaigns();
+      } else {
+        addToast(res.message || 'Lỗi khi chốt danh sách xác nhận', 'error');
+      }
+    } catch (err) {
+      addToast('Lỗi kết nối máy chủ', 'error');
+    } finally {
+      setFinalizing(false);
     }
   };
 
@@ -273,6 +392,7 @@ export default function CampaignManager() {
       ...formData,
       points: Number(formData.points) || 0,
       requiredParticipants: Math.max(0, parseInt(formData.requiredParticipants, 10) || 0),
+      requireConfirm: formData.requireConfirm ? 1 : 0,
     };
 
     try {
@@ -287,6 +407,7 @@ export default function CampaignManager() {
               ...prev,
               ...payload,
               required_participants: payload.requiredParticipants,
+              require_confirm: payload.requireConfirm,
             }));
           }
         }
@@ -535,6 +656,7 @@ export default function CampaignManager() {
                 targetType: 'all',
                 status: 'dang_mo_dang_ky',
                 shifts: [],
+                requireConfirm: false,
               });
               setShowEditModal(true);
             }}
@@ -603,6 +725,12 @@ export default function CampaignManager() {
                         <div className="flex items-center gap-2 flex-wrap">
                           {getStatusBadge(camp.status)}
                           {getTargetBadge(camp.target_type || camp.targetType)}
+                          {Number(camp.require_confirm ?? camp.requireConfirm) === 1 && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3 text-purple-600" />
+                              Check Confirm
+                            </span>
+                          )}
                           {shifts.length > 0 && (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
                               <Clock className="w-3 h-3 text-amber-600" />
@@ -698,6 +826,12 @@ export default function CampaignManager() {
                         : ' (Đủ quân số)'}
                     </span>
                   )}
+                  {Number(activeCampaign.require_confirm ?? activeCampaign.requireConfirm) === 1 && (
+                    <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
+                      Check Confirm (-20đ)
+                    </span>
+                  )}
                   {(() => {
                     const shifts = getCampaignShifts(activeCampaign);
                     if (shifts.length > 0) {
@@ -755,6 +889,7 @@ export default function CampaignManager() {
                           targetType: activeCampaign.target_type || activeCampaign.targetType || 'all',
                           status: activeCampaign.status || 'dang_mo_dang_ky',
                           shifts: getCampaignShifts(activeCampaign),
+                          requireConfirm: Number(activeCampaign.require_confirm ?? activeCampaign.requireConfirm) === 1,
                         });
                         setShowEditModal(true);
                       }}
@@ -781,8 +916,249 @@ export default function CampaignManager() {
               </div>
             </div>
 
-            {/* DÀNH CHO NHÓM TRƯỞNG & BCN: Đăng ký thành viên chọn lọc & Phân Kíp */}
-            <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-b border-emerald-100 space-y-3">
+            {/* Tab Navigation if require_confirm is enabled */}
+            {Number(activeCampaign.require_confirm ?? activeCampaign.requireConfirm) === 1 && (
+              <div className="flex border-b border-slate-200 bg-slate-100/70 px-4 pt-2.5 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveDetailTab('registrations')}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
+                    activeDetailTab === 'registrations'
+                      ? 'bg-white text-emerald-700 border-emerald-600 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 border-transparent hover:bg-white/50'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Đăng Ký & Điểm Danh ({filteredRegs.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveDetailTab('confirmations');
+                    loadConfirmations(activeCampaign.id);
+                  }}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all cursor-pointer flex items-center gap-1.5 border-b-2 ${
+                    activeDetailTab === 'confirmations'
+                      ? 'bg-white text-rose-700 border-rose-600 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 border-transparent hover:bg-white/50'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Check Confirm TNV (-20đ)</span>
+                  {confirmSummary.unconfirmedCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-100 text-rose-700 border border-rose-200">
+                      {confirmSummary.unconfirmedCount} chưa
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {activeDetailTab === 'confirmations' && Number(activeCampaign.require_confirm ?? activeCampaign.requireConfirm) === 1 ? (
+              <div className="p-4 space-y-4 flex-1 flex flex-col">
+                {/* Stats Summary Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-[11px] font-semibold text-slate-500 block">Tổng TNV hoạt động</span>
+                    <span className="text-lg font-black text-slate-800">{confirmSummary.totalCount}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                    <span className="text-[11px] font-semibold text-emerald-700 block">Đã Confirm</span>
+                    <span className="text-lg font-black text-emerald-700">{confirmSummary.confirmedCount}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                    <span className="text-[11px] font-semibold text-amber-700 block">Chưa Confirm</span>
+                    <span className="text-lg font-black text-amber-700">{confirmSummary.unconfirmedCount}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200">
+                    <span className="text-[11px] font-semibold text-rose-700 block">Đã phạt (-20đ)</span>
+                    <span className="text-lg font-black text-rose-700">{confirmSummary.penalizedCount}</span>
+                  </div>
+                </div>
+
+                {/* Filter & Finalize Action Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50/80 border border-slate-200">
+                  <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                    <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={confSearch}
+                      onChange={(e) => setConfSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && loadConfirmations(activeCampaign.id, confGroupFilter, confSearch)}
+                      placeholder="Tìm MSSV, tên TNV..."
+                      className="text-xs bg-transparent border-none focus:outline-none w-full"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={confGroupFilter}
+                      disabled={isLeader && user?.targetType === 'tnv'}
+                      onChange={(e) => {
+                        setConfGroupFilter(e.target.value);
+                        loadConfirmations(activeCampaign.id, e.target.value, confSearch);
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white"
+                    >
+                      {isAdmin && <option value="all">Tất cả các nhóm TNV</option>}
+                      {[1, 2, 3, 4].map((g) => (
+                        <option key={g} value={g}>
+                          Nhóm {g}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Finalize Button */}
+                    {(isAdmin || (isLeader && user?.targetType === 'tnv')) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowFinalizeModal(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-sm transition-all cursor-pointer"
+                        title="Chốt danh sách xác nhận và tự động phạt -20 điểm đối với các thành viên không confirm"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Chốt danh sách xác nhận (-20đ)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Table of Members */}
+                <div className="overflow-x-auto border border-slate-200 rounded-xl flex-1 max-h-[440px]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-xs z-10 font-bold text-slate-700 border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5 pl-3 w-10">STT</th>
+                        <th className="p-2.5">MSSV</th>
+                        <th className="p-2.5">Họ và tên</th>
+                        <th className="p-2.5 text-center">Lớp</th>
+                        <th className="p-2.5 text-center">Nhóm</th>
+                        <th className="p-2.5 text-center">Chức vụ</th>
+                        <th className="p-2.5 text-center min-w-[130px]">Xác nhận tham gia</th>
+                        <th className="p-2.5">Người xác nhận</th>
+                        <th className="p-2.5 text-center pr-3">Trạng thái chốt</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {loadingConf ? (
+                        <tr>
+                          <td colSpan={9} className="p-6 text-center text-slate-400">
+                            Đang tải danh sách xác nhận TNV...
+                          </td>
+                        </tr>
+                      ) : confirmations.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="p-6 text-center text-slate-400">
+                            Không tìm thấy thành viên TNV nào phù hợp.
+                          </td>
+                        </tr>
+                      ) : (
+                        confirmations.map((m, idx) => {
+                          const isConfirmed = Number(m.is_confirmed) === 1;
+                          const isPenalized = Number(m.is_penalized) === 1;
+                          const canEditThisMember = isAdmin || (isLeader && user?.targetType === 'tnv' && Number(user?.groupNum) === Number(m.group_num));
+
+                          return (
+                            <tr
+                              key={m.member_id}
+                              className={`hover:bg-slate-50 transition-colors ${
+                                isConfirmed ? 'bg-emerald-50/30' : isPenalized ? 'bg-rose-50/30' : ''
+                              }`}
+                            >
+                              <td className="p-2.5 pl-3 font-mono text-slate-400">{idx + 1}</td>
+                              <td className="p-2.5 font-mono font-semibold text-slate-700">{m.mssv}</td>
+                              <td className="p-2.5 font-bold text-slate-900">
+                                <div>{m.full_name}</div>
+                                {m.phone && <div className="text-[10px] text-slate-400 font-mono">{m.phone}</div>}
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-slate-600">{m.class_name || '-'}</td>
+                              <td className="p-2.5 text-center font-bold text-slate-700">Nhóm {m.group_num}</td>
+                              <td className="p-2.5 text-center font-medium">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                                  {m.role || 'Thành viên'}
+                                </span>
+                              </td>
+
+                              {/* Ô TICK ĐÃ CONFIRM DUY NHẤT */}
+                              <td className="p-2.5 text-center">
+                                {canEditThisMember ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleConfirm(m)}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                                      isConfirmed
+                                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs hover:bg-emerald-700'
+                                        : 'bg-white text-slate-600 border-slate-300 hover:border-emerald-500 hover:text-emerald-600'
+                                    }`}
+                                    title={isConfirmed ? 'Bấm để hủy xác nhận' : 'Bấm để xác nhận Đã Confirm'}
+                                  >
+                                    {isConfirmed ? (
+                                      <>
+                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                        <span>Đã confirm</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="w-3.5 h-3.5 rounded border border-slate-400 inline-block"></span>
+                                        <span>Chưa confirm</span>
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold ${
+                                      isConfirmed
+                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                        : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                    }`}
+                                  >
+                                    {isConfirmed ? '✓ Đã confirm' : 'Chưa confirm'}
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="p-2.5 text-slate-600 text-[11px]">
+                                {m.confirmed_by ? (
+                                  <div>
+                                    <span className="font-semibold text-slate-800">{m.confirmed_by}</span>
+                                    {m.confirmed_at && (
+                                      <div className="text-[10px] text-slate-400">
+                                        {new Date(m.confirmed_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}{' '}
+                                        {new Date(m.confirmed_at).toLocaleDateString('vi-VN')}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+
+                              <td className="p-2.5 text-center pr-3">
+                                {isPenalized ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                    <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                    Đã phạt -20đ
+                                  </span>
+                                ) : isConfirmed ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                    Hợp lệ
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">Chưa chốt</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* DÀNH CHO NHÓM TRƯỞNG & BCN: Đăng ký thành viên chọn lọc & Phân Kíp */}
+                <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border-b border-emerald-100 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
                   <Zap className="w-4 h-4 text-emerald-600 fill-emerald-600" />
@@ -1278,7 +1654,9 @@ export default function CampaignManager() {
                 </table>
               </div>
             </div>
-          </div>
+          </>
+        )}
+      </div>
         ) : (
           <div className="hidden lg:flex lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-8 items-center justify-center text-center text-slate-400">
             <div>
@@ -1408,6 +1786,26 @@ export default function CampaignManager() {
                 </div>
               </div>
 
+              {/* Cấu hình Check Confirm */}
+              <div className="p-3 rounded-xl border border-purple-200 bg-purple-50/60 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="requireConfirmCheckbox"
+                  checked={!!formData.requireConfirm}
+                  onChange={(e) => setFormData({ ...formData, requireConfirm: e.target.checked })}
+                  className="mt-0.5 w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-purple-300 cursor-pointer"
+                />
+                <label htmlFor="requireConfirmCheckbox" className="cursor-pointer select-none">
+                  <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-purple-600" />
+                    Bật yêu cầu Check Confirm (Tất cả TNV phải xác nhận)
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5">
+                    Khi bật, hệ thống sẽ mở bảng Check Confirm. Thành viên TNV không xác nhận khi chốt danh sách sẽ tự động bị trừ 20 điểm (-20đ).
+                  </span>
+                </label>
+              </div>
+
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Mô tả / Kế hoạch chi tiết</label>
                 <textarea
@@ -1513,6 +1911,22 @@ export default function CampaignManager() {
           }
         }}
         onCancel={() => setDeleteConfirmId(null)}
+      />
+
+      {/* Finalize Confirmations Modal */}
+      <ConfirmModal
+        isOpen={showFinalizeModal}
+        isDanger={true}
+        title="Chốt Danh Sách Xác Nhận & Trừ Điểm Kỷ Luật"
+        message={`Bạn đang chuẩn bị chốt danh sách xác nhận cho ${
+          isLeader && user?.targetType === 'tnv'
+            ? `Nhóm ${user.groupNum}`
+            : (confGroupFilter !== 'all' ? `Nhóm ${confGroupFilter}` : 'TẤT CẢ CÁC NHÓM TNV')
+        }.\n\nCẢNH BÁO: TẤT CẢ các thành viên TNV CHƯA ĐƯỢC TICK "Đã confirm" sẽ tự động bị TRỪ 20 ĐIỂM (-20đ) vào hồ sơ cá nhân và ghi log kỷ luật.\n\nBạn có chắc chắn muốn chốt danh sách xác nhận ngay bây giờ?`}
+        confirmText={finalizing ? 'Đang xử lý...' : 'Chốt & Trừ 20 điểm'}
+        cancelText="Hủy bỏ"
+        onConfirm={handleFinalizeConfirm}
+        onCancel={() => setShowFinalizeModal(false)}
       />
     </div>
   );

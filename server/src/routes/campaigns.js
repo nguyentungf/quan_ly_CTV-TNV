@@ -60,17 +60,18 @@ router.get('/', async (req, res) => {
 // 2. Thêm hoạt động mới
 router.post('/', requireAdmin, async (req, res) => {
   try {
-    const { name, description, location, eventDate, points, targetType, status, shifts, requiredParticipants } = req.body;
+    const { name, description, location, eventDate, points, targetType, status, shifts, requiredParticipants, requireConfirm } = req.body;
     if (!name || !eventDate) {
       return res.status(400).json({ success: false, message: 'Tên hoạt động và ngày tổ chức là bắt buộc' });
     }
 
     const shiftsStr = Array.isArray(shifts) ? JSON.stringify(shifts) : (typeof shifts === 'string' ? shifts : '[]');
     const reqPart = requiredParticipants !== undefined ? Math.max(0, Number(requiredParticipants)) : 0;
+    const reqConfirm = requireConfirm ? 1 : 0;
 
     const newCamp = await db.get(`
-      INSERT INTO campaigns (name, description, location, event_date, points, target_type, status, shifts, required_participants)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO campaigns (name, description, location, event_date, points, target_type, status, shifts, required_participants, require_confirm)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *
     `, [
       name.trim(),
@@ -81,7 +82,8 @@ router.post('/', requireAdmin, async (req, res) => {
       targetType || 'all',
       status || 'dang_mo_dang_ky',
       shiftsStr,
-      reqPart
+      reqPart,
+      reqConfirm
     ]);
 
     res.json({ success: true, message: 'Tạo hoạt động thành công', data: newCamp });
@@ -94,14 +96,15 @@ router.post('/', requireAdmin, async (req, res) => {
 router.put('/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, location, eventDate, points, targetType, status, shifts, requiredParticipants } = req.body;
+    const { name, description, location, eventDate, points, targetType, status, shifts, requiredParticipants, requireConfirm } = req.body;
 
     const shiftsStr = Array.isArray(shifts) ? JSON.stringify(shifts) : (typeof shifts === 'string' ? shifts : '[]');
     const reqPart = requiredParticipants !== undefined ? Math.max(0, Number(requiredParticipants)) : 0;
+    const reqConfirm = requireConfirm !== undefined ? (requireConfirm ? 1 : 0) : 0;
 
     await db.run(`
       UPDATE campaigns 
-      SET name = ?, description = ?, location = ?, event_date = ?, points = ?, target_type = ?, status = ?, shifts = ?, required_participants = ?
+      SET name = ?, description = ?, location = ?, event_date = ?, points = ?, target_type = ?, status = ?, shifts = ?, required_participants = ?, require_confirm = ?
       WHERE id = ?
     `, [
       name?.trim(),
@@ -113,6 +116,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
       status,
       shiftsStr,
       reqPart,
+      reqConfirm,
       Number(id)
     ]);
 
@@ -825,4 +829,225 @@ router.get('/:id/export-xlsx', async (req, res) => {
   }
 });
 
+// ==========================================================
+// TÍNH NĂNG CHECK CONFIRM CHO TOÀN BỘ TNV TRONG HOẠT ĐỘNG
+// ==========================================================
+
+// 12. Lấy danh sách Check Confirm của hoạt động
+router.get('/:id/confirmations', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { group, search } = req.query;
+
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    let query = `
+      SELECT 
+        m.id as member_id,
+        m.mssv,
+        m.full_name,
+        m.group_num,
+        m.role,
+        m.gender,
+        m.phone,
+        m.class_name,
+        m.total_points,
+        COALESCE(c.is_confirmed, 0) as is_confirmed,
+        COALESCE(c.is_penalized, 0) as is_penalized,
+        c.confirmed_by,
+        c.confirmed_at
+      FROM tnv_members m
+      LEFT JOIN campaign_confirmations c ON c.campaign_id = ? AND c.member_id = m.id
+      WHERE m.status = 'Đang hoạt động'
+    `;
+    const params = [Number(id)];
+
+    if (group && group !== 'all') {
+      query += ' AND m.group_num = ?';
+      params.push(Number(group));
+    }
+
+    if (search) {
+      query += ' AND (m.mssv LIKE ? OR m.full_name LIKE ? OR m.phone LIKE ?)';
+      const s = `%${search}%`;
+      params.push(s, s, s);
+    }
+
+    query += " ORDER BY m.group_num ASC, CASE m.role WHEN 'Nhóm trưởng' THEN 1 WHEN 'Nhóm phó' THEN 2 ELSE 3 END, m.mssv ASC";
+    const rows = await db.all(query, params);
+
+    const totalCount = rows.length;
+    const confirmedCount = rows.filter(r => Number(r.is_confirmed) === 1).length;
+    const penalizedCount = rows.filter(r => Number(r.is_penalized) === 1).length;
+    const unconfirmedCount = totalCount - confirmedCount;
+
+    res.json({
+      success: true,
+      data: rows,
+      summary: {
+        totalCount,
+        confirmedCount,
+        unconfirmedCount,
+        penalizedCount
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi tải danh sách xác nhận TNV', error: error.message });
+  }
+});
+
+// 13. Cập nhật ô tick Đã confirm cho 1 TNV (Admin & Nhóm trưởng nhóm đó)
+router.post('/:id/confirmations/toggle', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { memberId, isConfirmed } = req.body;
+
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: 'Thiếu thông tin thành viên' });
+    }
+
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    const member = await db.get('SELECT * FROM tnv_members WHERE id = ?', [Number(memberId)]);
+    if (!member) return res.status(404).json({ success: false, message: 'Không tìm thấy TNV' });
+
+    // Kiểm tra phân quyền: Admin toàn quyền; Nhóm trưởng chỉ được tick nhóm mình
+    if (req.user.role !== 'admin') {
+      if (req.user.targetType !== 'tnv' || Number(req.user.groupNum) !== Number(member.group_num)) {
+        return res.status(403).json({
+          success: false,
+          message: `Thành viên này thuộc Nhóm ${member.group_num}. Bạn chỉ có quyền quản lý Nhóm ${req.user.groupNum}!`
+        });
+      }
+    }
+
+    const confirmFlag = isConfirmed ? 1 : 0;
+    const confirmedBy = req.user.displayName || (req.user.role === 'admin' ? 'Ban Quản Trị' : `Nhóm trưởng Nhóm ${member.group_num}`);
+    const confirmedAt = confirmFlag ? new Date().toISOString() : '';
+
+    await db.run(`
+      INSERT INTO campaign_confirmations (campaign_id, member_id, group_num, is_confirmed, confirmed_by, confirmed_at, is_penalized)
+      VALUES (?, ?, ?, ?, ?, ?, 0)
+      ON CONFLICT(campaign_id, member_id) DO UPDATE SET
+        is_confirmed = EXCLUDED.is_confirmed,
+        confirmed_by = EXCLUDED.confirmed_by,
+        confirmed_at = EXCLUDED.confirmed_at
+    `, [Number(id), member.id, member.group_num, confirmFlag, confirmedBy, confirmedAt]);
+
+    res.json({
+      success: true,
+      message: confirmFlag ? `Đã xác nhận cho ${member.full_name}` : `Đã hủy xác nhận của ${member.full_name}`,
+      isConfirmed: confirmFlag
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi cập nhật xác nhận', error: error.message });
+  }
+});
+
+// 14. Chốt danh sách xác nhận & Phạt trừ 20 điểm cho những ai không confirm
+router.post('/:id/confirmations/finalize', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { groupNum } = req.body;
+
+    const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
+    if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
+
+    // Kiểm tra phân quyền: Chốt 'all' bắt buộc là Admin; chốt nhóm cụ thể thì Admin hoặc Leader nhóm đó
+    if (groupNum === 'all' || !groupNum) {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Chỉ Admin mới có quyền chốt danh sách xác nhận toàn bộ các nhóm!'
+        });
+      }
+    } else {
+      const gNum = Number(groupNum);
+      if (req.user.role !== 'admin') {
+        if (req.user.targetType !== 'tnv' || Number(req.user.groupNum) !== gNum) {
+          return res.status(403).json({
+            success: false,
+            message: `Bạn chỉ có quyền chốt danh sách Nhóm ${req.user.groupNum}!`
+          });
+        }
+      }
+    }
+
+    const targetGroup = (groupNum && groupNum !== 'all') ? Number(groupNum) : null;
+
+    let memberQuery = "SELECT id, full_name, group_num FROM tnv_members WHERE status = 'Đang hoạt động'";
+    const memberParams = [];
+    if (targetGroup) {
+      memberQuery += " AND group_num = ?";
+      memberParams.push(targetGroup);
+    }
+    const activeMembers = await db.all(memberQuery, memberParams);
+
+    if (activeMembers.length === 0) {
+      return res.status(400).json({ success: false, message: 'Không tìm thấy thành viên nào để chốt xác nhận!' });
+    }
+
+    let newlyPenalizedCount = 0;
+    let confirmedCount = 0;
+
+    await db.transaction(async (txDb) => {
+      for (const m of activeMembers) {
+        const conf = await txDb.get(`
+          SELECT * FROM campaign_confirmations 
+          WHERE campaign_id = ? AND member_id = ?
+        `, [Number(id), m.id]);
+
+        const isConfirmed = conf ? Number(conf.is_confirmed) === 1 : false;
+        const isPenalized = conf ? Number(conf.is_penalized) === 1 : false;
+
+        if (isConfirmed) {
+          confirmedCount++;
+        } else if (!isPenalized) {
+          // Chưa confirm và chưa bị phạt -> Phạt trừ 20 điểm!
+          await txDb.run(`
+            INSERT INTO tnv_activities (member_id, category, points, note)
+            VALUES (?, 'Kỷ luật / Không confirm', -20, ?)
+          `, [m.id, `Không xác nhận hoạt động: ${camp.name}`]);
+
+          if (conf) {
+            await txDb.run(`
+              UPDATE campaign_confirmations 
+              SET is_penalized = 1 
+              WHERE id = ?
+            `, [conf.id]);
+          } else {
+            await txDb.run(`
+              INSERT INTO campaign_confirmations (campaign_id, member_id, group_num, is_confirmed, is_penalized)
+              VALUES (?, ?, ?, 0, 1)
+            `, [Number(id), m.id, m.group_num]);
+          }
+
+          // Đồng bộ lại total_points của TNV
+          await txDb.run(`
+            UPDATE tnv_members 
+            SET total_points = (SELECT COALESCE(SUM(points), 0) FROM tnv_activities WHERE member_id = ?)
+            WHERE id = ?
+          `, [m.id, m.id]);
+
+          newlyPenalizedCount++;
+        }
+      }
+    });
+
+    const targetText = targetGroup ? `Nhóm ${targetGroup}` : 'tất cả các nhóm';
+    res.json({
+      success: true,
+      message: `Đã chốt danh sách xác nhận cho ${targetText}! Đã phạt trừ 20 điểm cho ${newlyPenalizedCount} thành viên không confirm.`,
+      newlyPenalizedCount,
+      confirmedCount,
+      totalChecked: activeMembers.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Lỗi chốt danh sách xác nhận', error: error.message });
+  }
+});
+
 export default router;
+
