@@ -50,6 +50,23 @@ export default function TnvMemberList({
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async (type) => {
+    setShowExportMenu(false);
+    setExporting(true);
+    try {
+      const url = type === 'xlsx' ? '/api/tnv/export-xlsx' : '/api/tnv/export-csv';
+      const filename = type === 'xlsx' ? 'Danh_sach_TNV_Dang_hoat_dong.xlsx' : 'Danh_sach_TNV_Dang_hoat_dong.csv';
+      await api.downloadFile(url, filename);
+      addToast(`Xuất file ${type.toUpperCase()} TNV thành công!`, 'success');
+    } catch (err) {
+      addToast(err.message || 'Lỗi khi xuất file TNV', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const [showBulkModal, setShowBulkModal] = useState(null); // 'status' | 'group' | 'points' | 'warning' | 'delete' | null
   const [bulkPayload, setBulkPayload] = useState({
     status: 'Đang hoạt động',
@@ -183,24 +200,24 @@ export default function TnvMemberList({
                   className="absolute right-0 mt-1 w-44 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-30 animate-fade-in"
                   onMouseLeave={() => setShowExportMenu(false)}
                 >
-                  <a
-                    href="/api/tnv/export-xlsx"
-                    download="Danh_sach_TNV_Dang_hoat_dong.xlsx"
-                    className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
-                    onClick={() => setShowExportMenu(false)}
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleExport('xlsx')}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50 cursor-pointer transition-colors"
                   >
                     <Download className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Xuất file Excel (.xlsx)</span>
-                  </a>
-                  <a
-                    href="/api/tnv/export-csv"
-                    download="Danh_sach_TNV_Dang_hoat_dong.csv"
-                    className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-rose-50 hover:text-rose-700"
-                    onClick={() => setShowExportMenu(false)}
+                    <span>{exporting ? 'Đang xuất...' : 'Xuất file Excel (.xlsx)'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleExport('csv')}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50 cursor-pointer transition-colors"
                   >
                     <Download className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Xuất file CSV (.csv)</span>
-                  </a>
+                    <span>{exporting ? 'Đang xuất...' : 'Xuất file CSV (.csv)'}</span>
+                  </button>
                 </div>
               )}
             </div>

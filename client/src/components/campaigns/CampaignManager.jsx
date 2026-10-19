@@ -721,14 +721,25 @@ export default function CampaignManager() {
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
-                <a
-                  href={`/api/campaigns/${activeCampaign.id}/export-xlsx`}
-                  download
-                  className="p-1.5 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-200"
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const cleanName = (activeCampaign.name || 'hoat_dong').replace(/[/\\?%*:|"<>]/g, '_').replace(/\s+/g, '_');
+                      await api.downloadFile(
+                        `/api/campaigns/${activeCampaign.id}/export-xlsx`,
+                        `Diem_danh_${cleanName}.xlsx`
+                      );
+                      addToast('Xuất file điểm danh hoạt động thành công!', 'success');
+                    } catch (err) {
+                      addToast(err.message || 'Lỗi khi xuất file Excel', 'error');
+                    }
+                  }}
+                  className="p-1.5 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-200 cursor-pointer"
                   title="Xuất file Excel điểm danh hoạt động này (phân theo Kíp)"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
-                </a>
+                </button>
                 {isAdmin && (
                   <>
                     <button

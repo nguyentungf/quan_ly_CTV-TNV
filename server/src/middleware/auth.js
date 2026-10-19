@@ -1,10 +1,12 @@
 import { verifyToken } from '../routes/auth.js';
 import { db } from '../db/index.js';
 
-// Middleware trích xuất thông tin người dùng từ Token (nếu có)
+// Middleware trích xuất thông tin người dùng từ Token (nếu có từ Header hoặc Query Param)
 export function parseUser(req, res, next) {
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  const token = (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null)
+    || req.query?.token
+    || null;
   req.user = verifyToken(token) || { role: 'guest', isGuest: true, displayName: 'Khách (Chế độ xem)' };
   next();
 }
@@ -12,7 +14,9 @@ export function parseUser(req, res, next) {
 // Middleware bắt buộc phải đăng nhập (Không cho phép Khách sửa/xóa/điểm danh)
 export function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  const token = (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null)
+    || req.query?.token
+    || null;
   const user = verifyToken(token);
 
   if (!user || user.role === 'guest' || user.isGuest) {

@@ -16,6 +16,35 @@ async function authFetch(url, options = {}) {
 }
 
 export const api = {
+  // ===================== FILE DOWNLOAD HELPER =====================
+  downloadFile: async (url, fallbackFilename = 'download.xlsx') => {
+    const res = await authFetch(url);
+    if (!res.ok) {
+      let errorMsg = 'Không thể tải file!';
+      try {
+        const data = await res.json();
+        if (data.message) errorMsg = data.message;
+      } catch (e) {}
+      throw new Error(errorMsg);
+    }
+    const blob = await res.blob();
+    let filename = fallbackFilename;
+    const disposition = res.headers.get('content-disposition');
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename=["']?([^"';]+)["']?/);
+      if (match && match[1]) filename = decodeURIComponent(match[1]);
+    }
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 1000);
+    return true;
+  },
+
   // ===================== AUTH APIs =====================
   login: async (data) => {
     const res = await fetch(`${API_BASE}/auth/login`, {
