@@ -456,24 +456,37 @@ router.put('/:id/attendance', requireAuth, async (req, res) => {
     const camp = await db.get('SELECT * FROM campaigns WHERE id = ?', [Number(id)]);
     if (!camp) return res.status(404).json({ success: false, message: 'Không tìm thấy hoạt động' });
 
-    const reg = await db.get('SELECT * FROM campaign_registrations WHERE id = ?', [Number(registrationId)]);
-    if (!reg) return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin đăng ký' });
-
-    // Kiểm tra quyền hạn nếu là Nhóm trưởng
-    if (req.user.role !== 'admin') {
-      if (req.user.targetType !== reg.member_type || Number(req.user.groupNum) !== Number(reg.group_num)) {
-        return res.status(403).json({
-          success: false,
-          message: `Bạn chỉ có quyền điểm danh cho thành viên thuộc Nhóm ${req.user.groupNum} (${req.user.targetType?.toUpperCase()})!`
-        });
-      }
-    }
-
     const pointsDelta = camp.points || 10;
-    const previousAwarded = reg.points_awarded || 0;
-    let newAwarded = previousAwarded;
+    let newAwarded = 0;
+    let attendanceError = null;
 
     await db.transaction(async (txDb) => {
+      // PostgreSQL locks the registration row until commit. SQLite transactions
+      // are serialized by the adapter's transaction mutex.
+      const reg = await txDb.get(
+        db.isPostgres
+          ? 'SELECT * FROM campaign_registrations WHERE id = ? AND campaign_id = ? FOR UPDATE'
+          : 'SELECT * FROM campaign_registrations WHERE id = ? AND campaign_id = ?',
+        [Number(registrationId), Number(id)]
+      );
+      if (!reg) {
+        attendanceError = { status: 404, message: 'Không tìm thấy thông tin đăng ký' };
+        return;
+      }
+
+      // Authorize against the same row that is locked and updated below.
+      if (req.user.role !== 'admin'
+        && (req.user.targetType !== reg.member_type || Number(req.user.groupNum) !== Number(reg.group_num))) {
+        attendanceError = {
+          status: 403,
+          message: `Bạn chỉ có quyền điểm danh cho thành viên thuộc Nhóm ${req.user.groupNum} (${req.user.targetType?.toUpperCase()})!`
+        };
+        return;
+      }
+
+      const previousAwarded = Number(reg.points_awarded) || 0;
+      newAwarded = previousAwarded;
+
       // Trường hợp 1: Chuyển sang 'co_mat' và trước đó chưa cộng điểm
       if (attendanceStatus === 'co_mat' && previousAwarded === 0) {
         newAwarded = pointsDelta;
@@ -535,6 +548,10 @@ router.put('/:id/attendance', requireAuth, async (req, res) => {
         WHERE id = ?
       `, [attendanceStatus, newAwarded, Number(registrationId)]);
     });
+
+    if (attendanceError) {
+      return res.status(attendanceError.status).json({ success: false, message: attendanceError.message });
+    }
 
     res.json({
       success: true,

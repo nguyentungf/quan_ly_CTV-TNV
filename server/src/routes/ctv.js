@@ -116,16 +116,44 @@ router.delete('/members/:id', checkGroupPermission('ctv'), async (req, res) => {
   }
 });
 
+function hasValidMemberIds(memberIds) {
+  return Array.isArray(memberIds)
+    && memberIds.length > 0
+    && memberIds.every((memberId) => Number.isSafeInteger(memberId) && memberId > 0);
+}
+
+function validateBulkMemberIds(req, res, next) {
+  if (!hasValidMemberIds(req.body?.memberIds)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Mỗi mã nhân sự phải là số nguyên dương hợp lệ!'
+    });
+  }
+  next();
+}
+
 // 5. Thao tác hàng loạt (Bulk Actions)
-router.post('/bulk-action', checkGroupPermission('ctv'), async (req, res) => {
+router.post('/bulk-action', validateBulkMemberIds, checkGroupPermission('ctv'), async (req, res) => {
   try {
     const { action, memberIds, payload } = req.body;
-    if (!action || !memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
+    if (!action || !hasValidMemberIds(memberIds)) {
       return res.status(400).json({ success: false, message: 'Danh sách nhân sự được chọn không hợp lệ!' });
     }
+    if (memberIds.length > 5000) {
+      return res.status(400).json({ success: false, message: `Số lượng thành viên được chọn (${memberIds.length}) vượt quá giới hạn cho phép (5000). Vui lòng chia nhỏ thao tác!` });
+    }
 
-    const ids = memberIds.map(Number);
+    const ids = memberIds;
     const placeholders = ids.map(() => '?').join(',');
+
+    // Guard: Các thao tác nhạy cảm (đổi nhóm, xóa) chỉ dành cho Admin
+    const adminOnlyActions = ['change_group', 'delete'];
+    if (adminOnlyActions.includes(action) && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Thao tác này chỉ dành riêng cho Ban Chủ Nhiệm (Admin)!'
+      });
+    }
 
     if (action === 'change_status') {
       const { status } = payload || {};
@@ -579,7 +607,7 @@ async function getExportRows() {
 }
 
 // 17. Xuất file EXCEL (.xlsx) chuẩn theo ảnh
-router.get('/export-xlsx', async (req, res) => {
+router.get('/export-xlsx', requireAuth, async (req, res) => {
   try {
     const rows = await getExportRows();
     const wb = XLSX.utils.book_new();
@@ -613,7 +641,7 @@ router.get('/export-xlsx', async (req, res) => {
 });
 
 // 18. Xuất file CSV (UTF-8 BOM chuẩn theo ảnh)
-router.get('/export-csv', async (req, res) => {
+router.get('/export-csv', requireAuth, async (req, res) => {
   try {
     const rows = await getExportRows();
     const headers = ['Nhóm trưởng', 'STT', 'Nhóm', 'Họ và tên', 'MSSV', 'Giới tính', 'Số điện thoại', 'Lớp', 'Email', 'Chức vụ', 'Điểm thái độ', 'Điểm hoạt động', 'Tổng điểm'];

@@ -3,13 +3,82 @@ import crypto from 'crypto';
 import { db } from '../db/index.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'quan-ly-ctv-tnv-secret-key-2026';
+const INSECURE_LEGACY_JWT_SECRET = 'quan-ly-ctv-tnv-secret-key-2026';
+
+/**
+ * Returns the configured signing secret, never a source-controlled fallback.
+ *
+ * A missing (or previously exposed) secret must not turn an authentication
+ * failure into a valid admin token.  Keep this lookup at call time so test
+ * and deployment configuration is evaluated from the current environment.
+ */
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET?.trim();
+
+  if (!secret || secret === INSECURE_LEGACY_JWT_SECRET) {
+    throw new Error(
+      'JWT_SECRET must be configured with a unique, non-default secret before issuing or accepting JWTs.'
+    );
+  }
+
+  return secret;
+}
+
+// Fail fast for deployed instances.  In development/test, verification still
+// fails closed below so an absent secret can never authenticate a request.
+if (process.env.NODE_ENV === 'production') {
+  getJwtSecret();
+}
+
+// Count requests as they arrive, rather than only failed attempts after the
+// async database lookup. This also protects against parallel password guesses.
+const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_RATE_LIMIT_MAX_REQUESTS = 10;
+const loginRequestsByClient = new Map();
+
+function getLoginClientKey(req) {
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+function loginRateLimiter(req, res, next) {
+  const now = Date.now();
+
+  // Remove expired buckets while handling login traffic so the in-memory
+  // limiter does not retain inactive clients indefinitely.
+  for (const [key, value] of loginRequestsByClient) {
+    if (now >= value.resetAt) loginRequestsByClient.delete(key);
+  }
+
+  const clientKey = getLoginClientKey(req);
+  const attempt = loginRequestsByClient.get(clientKey);
+
+  if (!attempt || now >= attempt.resetAt) {
+    loginRequestsByClient.set(clientKey, {
+      count: 1,
+      resetAt: now + LOGIN_RATE_LIMIT_WINDOW_MS
+    });
+    return next();
+  }
+
+  if (attempt.count >= LOGIN_RATE_LIMIT_MAX_REQUESTS) {
+    const retryAfterSeconds = Math.ceil((attempt.resetAt - now) / 1000);
+    res.set('Retry-After', String(retryAfterSeconds));
+    return res.status(429).json({
+      success: false,
+      message: 'Too many login attempts. Please try again later.'
+    });
+  }
+
+  attempt.count += 1;
+  next();
+}
 
 // Helper: Ký và tạo Token
 export function generateToken(payload) {
+  const jwtSecret = getJwtSecret();
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + 30 * 24 * 60 * 60 * 1000 })).toString('base64url');
-  const signature = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  const signature = crypto.createHmac('sha256', jwtSecret).update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
@@ -22,8 +91,24 @@ export function verifyToken(token) {
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const [header, body, signature] = parts;
-  const expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
-  if (signature !== expectedSig) return null;
+
+  let expectedSig;
+  try {
+    expectedSig = crypto.createHmac('sha256', getJwtSecret()).update(`${header}.${body}`).digest();
+  } catch {
+    // Refuse every bearer token when JWT signing is not securely configured.
+    // This lets authentication middleware return 401 rather than accepting a
+    // token signed with a known default.
+    return null;
+  }
+
+  let providedSig;
+  try {
+    providedSig = Buffer.from(signature, 'base64url');
+  } catch {
+    return null;
+  }
+  if (providedSig.length !== expectedSig.length || !crypto.timingSafeEqual(providedSig, expectedSig)) return null;
   try {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
     if (payload.exp && payload.exp < Date.now()) return null; // Token hết hạn
@@ -34,7 +119,7 @@ export function verifyToken(token) {
 }
 
 // 1. Đăng nhập hệ thống (Hỗ trợ Khách, Nhóm trưởng, Ban Quản Trị)
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimiter, async (req, res) => {
   try {
     const { loginType, targetType, groupNum, password } = req.body;
 

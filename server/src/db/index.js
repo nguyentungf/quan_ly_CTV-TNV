@@ -17,6 +17,11 @@ const isPostgres = Boolean(
 let pool = null;
 let sqlite = null;
 
+// Async mutex (Promise-chain lock) để tuần tự hóa SQLite transactions.
+// SQLite chỉ cho phép 1 write-transaction tại một thời điểm; mutex này đảm bảo
+// mỗi lời gọi db.transaction() phải chờ transaction trước hoàn tất trước khi BEGIN.
+let _txLock = Promise.resolve();
+
 // Hàm chuyển đổi placeholder từ chuẩn '?' (SQLite) sang '$1, $2, ...' (PostgreSQL)
 export function toPgSql(sql) {
   let idx = 1;
@@ -157,14 +162,31 @@ export const db = {
         client.release();
       }
     } else {
-      // Đối với SQLite, hỗ trợ async callback an toàn với BEGIN / COMMIT / ROLLBACK
-      sqlite.exec('BEGIN TRANSACTION');
+      // SQLite: tuần tự hóa transactions bằng async mutex (_txLock).
+      // Mỗi transaction nối vào cuối Promise chain, chờ transaction trước xong
+      // rồi mới BEGIN, tránh lỗi "cannot start a transaction within a transaction".
+      let resolve, reject;
+      const gate = new Promise((res, rej) => { resolve = res; reject = rej; });
+
+      // Lưu tail hiện tại để chờ, rồi cập nhật _txLock sang gate mới
+      const prev = _txLock;
+      _txLock = gate;
+
       try {
+        await prev; // chờ transaction trước kết thúc (nếu có)
+      } catch {
+        // Lỗi của transaction trước không ảnh hưởng transaction này
+      }
+
+      try {
+        sqlite.exec('BEGIN TRANSACTION');
         const result = await callback(db);
         sqlite.exec('COMMIT');
+        resolve();   // mở khóa cho transaction kế tiếp
         return result;
       } catch (err) {
-        sqlite.exec('ROLLBACK');
+        try { sqlite.exec('ROLLBACK'); } catch { /* đã rollback hoặc chưa begin */ }
+        resolve();   // vẫn mở khóa dù lỗi, để hàng đợi không bị chặn mãi mãi
         throw err;
       }
     }

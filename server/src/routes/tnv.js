@@ -144,9 +144,21 @@ router.post('/bulk-action', checkGroupPermission('tnv'), async (req, res) => {
     if (!action || !memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
       return res.status(400).json({ success: false, message: 'Danh sách nhân sự được chọn không hợp lệ!' });
     }
+    if (memberIds.length > 5000) {
+      return res.status(400).json({ success: false, message: `Số lượng thành viên được chọn (${memberIds.length}) vượt quá giới hạn cho phép (5000). Vui lòng chia nhỏ thao tác!` });
+    }
 
     const ids = memberIds.map(Number);
     const placeholders = ids.map(() => '?').join(',');
+
+    // Guard: Các thao tác nhạy cảm (kỷ luật, đổi nhóm, xóa) chỉ dành cho Admin
+    const adminOnlyActions = ['set_warning', 'change_group', 'delete'];
+    if (adminOnlyActions.includes(action) && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Thao tác này chỉ dành riêng cho Ban Chủ Nhiệm (Admin)!'
+      });
+    }
 
     if (action === 'change_status') {
       const { status } = payload || {};
@@ -572,7 +584,7 @@ async function getExportTnvRows() {
 }
 
 // 18. Xuất file EXCEL (.xlsx) TNV chuẩn theo cấu trúc ảnh
-router.get('/export-xlsx', async (req, res) => {
+router.get('/export-xlsx', requireAuth, async (req, res) => {
   try {
     const rows = await getExportTnvRows();
     const wb = XLSX.utils.book_new();
@@ -605,7 +617,7 @@ router.get('/export-xlsx', async (req, res) => {
 });
 
 // 19. Xuất file CSV (UTF-8 BOM chuẩn theo ảnh)
-router.get('/export-csv', async (req, res) => {
+router.get('/export-csv', requireAuth, async (req, res) => {
   try {
     const rows = await getExportTnvRows();
     const headers = ['Nhóm trưởng', 'STT', 'Nhóm', 'Họ và tên', 'MSSV', 'Giới tính', 'Số điện thoại', 'Lớp', 'Email', 'Chức vụ', 'Điểm tích lũy', 'Kỷ luật'];
