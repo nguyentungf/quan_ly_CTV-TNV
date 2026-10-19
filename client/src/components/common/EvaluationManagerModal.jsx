@@ -12,7 +12,9 @@ import {
   ShieldAlert,
   ChevronDown,
   Info,
-  Crown
+  Crown,
+  Sliders,
+  RotateCcw
 } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from './Toast';
@@ -41,7 +43,8 @@ export default function EvaluationManagerModal({
   const [isAllLocked, setIsAllLocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [draftInputs, setDraftInputs] = useState({}); // { [memberId]: { qualitativeScore, notes } }
+  const [isManualEdit, setIsManualEdit] = useState(false); // Chế độ cho phép kích hoạt sửa thủ công
+  const [draftInputs, setDraftInputs] = useState({}); // { [memberId]: { attendanceScore, activityScore, qualitativeScore, notes } }
 
   // Khởi tạo nhóm theo quyền của người dùng nếu là Nhóm trưởng
   useEffect(() => {
@@ -72,11 +75,13 @@ export default function EvaluationManagerModal({
         if (res.rubric) setRubric(res.rubric);
         setIsAllLocked(Boolean(res.isAllLocked));
 
-        // Khởi tạo draftInputs từ dữ liệu trả về
+        // Khởi tạo draftInputs từ dữ liệu thực tế trả về
         const initialDrafts = {};
         for (const item of res.data) {
           initialDrafts[item.member.id] = {
-            qualitativeScore: item.qualitativeScore || 0,
+            attendanceScore: item.attendanceScore ?? '',
+            activityScore: item.activityScore ?? '',
+            qualitativeScore: item.qualitativeScore ?? 0,
             notes: item.notes || ''
           };
         }
@@ -107,11 +112,39 @@ export default function EvaluationManagerModal({
     }));
   };
 
+  // Khôi phục điểm Chuyên cần & Hoạt động về giá trị tự động tính toán từ hệ thống
+  const handleResetManualToAuto = () => {
+    if (!window.confirm('Bạn có chắc muốn khôi phục điểm Chuyên cần & Hoạt động về giá trị tự động tính từ hệ thống?')) return;
+    const resetDrafts = {};
+    for (const item of evalList) {
+      resetDrafts[item.member.id] = {
+        ...draftInputs[item.member.id],
+        attendanceScore: item.attendanceScore ?? 0,
+        activityScore: item.activityScore ?? 0
+      };
+    }
+    setDraftInputs(resetDrafts);
+    addToast('Đã khôi phục điểm về mặc định tự động!', 'info');
+  };
+
   // Tính toán lại điểm tức thời trên UI
   const calculateCurrentRow = (item) => {
-    const draft = draftInputs[item.member.id] || { qualitativeScore: 0, notes: '' };
+    const draft = draftInputs[item.member.id] || {};
+
+    // Điểm chuyên cần: Ưu tiên giá trị thủ công trong draft nếu có, nếu để trống thì coi như 0
+    let attScore = item.attendanceScore || 0;
+    if (draft.attendanceScore !== undefined && draft.attendanceScore !== '') {
+      attScore = Math.max(0, Math.min(rubric.attendanceWeight, Number(draft.attendanceScore) || 0));
+    }
+
+    // Điểm hoạt động: Ưu tiên giá trị thủ công trong draft nếu có, nếu để trống thì coi như 0
+    let actScore = item.activityScore || 0;
+    if (draft.activityScore !== undefined && draft.activityScore !== '') {
+      actScore = Math.max(0, Math.min(rubric.activityWeight, Number(draft.activityScore) || 0));
+    }
+
     const qScore = Math.max(-rubric.qualitativeWeight, Math.min(rubric.qualitativeWeight, Number(draft.qualitativeScore || 0)));
-    const totalScore = item.attendanceScore + item.activityScore + qScore;
+    const totalScore = attScore + actScore + qScore;
 
     let rank = 'Khá';
     if (totalScore >= rubric.thresholdExcellent) rank = 'Xuất sắc';
@@ -129,7 +162,7 @@ export default function EvaluationManagerModal({
       }
     }
 
-    return { qScore, totalScore, rank, notes: draft.notes };
+    return { attScore, actScore, qScore, totalScore, rank, notes: draft.notes || '' };
   };
 
   // 1. Lưu bản nháp (Nhóm trưởng / Admin)
@@ -140,10 +173,10 @@ export default function EvaluationManagerModal({
         const current = calculateCurrentRow(item);
         return {
           memberId: item.member.id,
+          attendanceScore: current.attScore,
+          activityScore: current.actScore,
           qualitativeScore: current.qScore,
           notes: current.notes,
-          attendanceScore: item.attendanceScore,
-          activityScore: item.activityScore,
           rankGrade: current.rank
         };
       });
@@ -330,6 +363,35 @@ export default function EvaluationManagerModal({
                 ))}
               </select>
             </div>
+
+            {/* Nút Kích Hoạt Sửa Thủ Công & Khôi Phục */}
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={() => setIsManualEdit(!isManualEdit)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold text-xs transition-all shadow-2xs ${
+                  isManualEdit
+                    ? 'bg-amber-600 text-white hover:bg-amber-700 ring-2 ring-amber-400/50'
+                    : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-300'
+                }`}
+                title="Cho phép chỉnh sửa trực tiếp điểm Chuyên cần và Điểm Hoạt động bằng tay"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>{isManualEdit ? 'Đang bật Sửa Thủ Công' : 'Kích hoạt Sửa Thủ Công'}</span>
+              </button>
+
+              {isManualEdit && (
+                <button
+                  type="button"
+                  onClick={handleResetManualToAuto}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-all"
+                  title="Khôi phục điểm Chuyên cần và Hoạt động về giá trị tự động từ hệ thống"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Khôi phục tự động</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Tóm tắt thống kê danh hiệu */}
@@ -360,6 +422,11 @@ export default function EvaluationManagerModal({
             <Info className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
             <span>
               <b>Cấu trúc điểm:</b> Chuyên cần (tối đa {rubric.attendanceWeight}đ) + Hoạt động (tối đa {rubric.activityWeight}đ) + Định tính (tối đa &plusmn;{rubric.qualitativeWeight}đ).
+              {isManualEdit && (
+                <span className="ml-2 font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-sm">
+                  ⚡ Chế độ sửa thủ công đang bật: Bạn có thể nhập trực tiếp số điểm thực tế cho từng ô.
+                </span>
+              )}
             </span>
           </div>
           <div className="text-slate-600">
@@ -386,8 +453,14 @@ export default function EvaluationManagerModal({
                     <th className="py-2.5 px-3">Nhóm</th>
                     <th className="py-2.5 px-3">Họ và tên</th>
                     <th className="py-2.5 px-3">MSSV</th>
-                    <th className="py-2.5 px-3 text-center">Chuyên cần ({rubric.attendanceWeight}đ)</th>
-                    <th className="py-2.5 px-3 text-center">Hoạt động ({rubric.activityWeight}đ)</th>
+                    <th className={`py-2.5 px-3 text-center transition-colors ${isManualEdit ? 'bg-blue-100 text-blue-900 ring-1 ring-blue-300' : ''}`}>
+                      Chuyên cần ({rubric.attendanceWeight}đ)
+                      {isManualEdit && <span className="block text-[10px] text-blue-600 font-normal">Sửa tay</span>}
+                    </th>
+                    <th className={`py-2.5 px-3 text-center transition-colors ${isManualEdit ? 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300' : ''}`}>
+                      Hoạt động ({rubric.activityWeight}đ)
+                      {isManualEdit && <span className="block text-[10px] text-emerald-600 font-normal">Sửa tay</span>}
+                    </th>
                     <th className="py-2.5 px-3 text-center min-w-[130px]">Định tính (&plusmn;{rubric.qualitativeWeight}đ)</th>
                     <th className="py-2.5 px-3 text-center min-w-[200px]">Nhận xét & Đóng góp</th>
                     <th className="py-2.5 px-3 text-center font-extrabold">Tổng điểm</th>
@@ -396,7 +469,7 @@ export default function EvaluationManagerModal({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {evalList.map((item, idx) => {
-                    const { qScore, totalScore, rank, notes } = calculateCurrentRow(item);
+                    const { attScore, actScore, qScore, totalScore, rank, notes } = calculateCurrentRow(item);
                     const isRowLocked = isAllLocked || item.isLocked;
 
                     return (
@@ -417,15 +490,61 @@ export default function EvaluationManagerModal({
                         
                         {/* Chuyên cần */}
                         <td className="py-2.5 px-3 text-center">
-                          <span className="font-extrabold text-blue-700 text-sm">{item.attendanceScore}</span>
-                          <span className="text-[10px] text-slate-400 block">
-                            ({item.attendedCount}/{item.totalEvents} buổi)
-                          </span>
+                          {isManualEdit ? (
+                            <div className="flex flex-col items-center">
+                              <input
+                                type="number"
+                                min={0}
+                                max={rubric.attendanceWeight}
+                                disabled={isRowLocked && !isAdmin}
+                                value={draftInputs[item.member.id]?.attendanceScore ?? ''}
+                                placeholder="-"
+                                onChange={(e) => handleInputChange(item.member.id, 'attendanceScore', e.target.value)}
+                                className="w-16 px-1.5 py-1 text-center font-bold text-blue-900 border border-blue-400 rounded-lg bg-blue-50/70 focus:ring-2 focus:ring-blue-400 focus:border-blue-500 outline-hidden"
+                              />
+                              <span className="text-[10px] text-slate-400 mt-0.5">
+                                Gốc: {item.attendedCount}/{item.totalEvents}b
+                              </span>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="font-extrabold text-blue-700 text-sm">
+                                {draftInputs[item.member.id]?.attendanceScore !== undefined && draftInputs[item.member.id]?.attendanceScore !== ''
+                                  ? draftInputs[item.member.id].attendanceScore
+                                  : (item.attendanceScore !== undefined && item.attendanceScore !== null ? item.attendanceScore : '-')}
+                              </span>
+                              <span className="text-[10px] text-slate-400 block">
+                                ({item.attendedCount}/{item.totalEvents} buổi)
+                              </span>
+                            </>
+                          )}
                         </td>
 
                         {/* Hoạt động */}
                         <td className="py-2.5 px-3 text-center">
-                          <span className="font-extrabold text-emerald-700 text-sm">{item.activityScore}</span>
+                          {isManualEdit ? (
+                            <div className="flex flex-col items-center">
+                              <input
+                                type="number"
+                                min={0}
+                                max={rubric.activityWeight}
+                                disabled={isRowLocked && !isAdmin}
+                                value={draftInputs[item.member.id]?.activityScore ?? ''}
+                                placeholder="-"
+                                onChange={(e) => handleInputChange(item.member.id, 'activityScore', e.target.value)}
+                                className="w-16 px-1.5 py-1 text-center font-bold text-emerald-900 border border-emerald-400 rounded-lg bg-emerald-50/70 focus:ring-2 focus:ring-emerald-400 focus:border-emerald-500 outline-hidden"
+                              />
+                              <span className="text-[10px] text-slate-400 mt-0.5">
+                                Gốc: {isCtv ? (item.member?.activity_points ?? 0) : (item.member?.total_points ?? 0)}đ
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="font-extrabold text-emerald-700 text-sm">
+                              {draftInputs[item.member.id]?.activityScore !== undefined && draftInputs[item.member.id]?.activityScore !== ''
+                                ? draftInputs[item.member.id].activityScore
+                                : (item.activityScore !== undefined && item.activityScore !== null && item.activityScore !== 0 ? item.activityScore : '-')}
+                            </span>
+                          )}
                         </td>
 
                         {/* Nhập điểm định tính */}

@@ -135,7 +135,7 @@ router.get('/summary', async (req, res) => {
 
     // 5. Tính toán điểm cho từng thành viên
     const result = members.map(m => {
-      // a. Điểm chuyên cần
+      // a. Điểm chuyên cần tự động
       let attendedCount = 0;
       let excusedCount = 0;
       let unexcusedCount = 0;
@@ -153,22 +153,23 @@ router.get('/summary', async (req, res) => {
         const rate = (attendedCount + excusedCount * 0.5) / totalEvents;
         rawAttScore = Math.round(rate * rubric.attendanceWeight);
       }
-      const attendanceScore = Math.max(0, Math.min(rubric.attendanceWeight, rawAttScore));
+      let attendanceScore = Math.max(0, Math.min(rubric.attendanceWeight, rawAttScore));
 
-      // b. Điểm hoạt động
-      let activityScore = 0;
-      if (isCtv) {
-        // Chuẩn hóa điểm hoạt động CTV về thang điểm rubric.activityWeight
-        const rawAct = m.activity_points || 0;
-        activityScore = Math.max(0, Math.min(rubric.activityWeight, rawAct));
-      } else {
-        // Với TNV lấy điểm total_points
-        const rawTnvPoints = m.total_points || 0;
-        activityScore = Math.max(0, Math.min(rubric.activityWeight, rawTnvPoints));
+      // b. Điểm hoạt động tự động (lấy từ trường điểm hoạt động trong bảng thành viên)
+      const rawAct = isCtv ? (m.activity_points || 0) : (m.total_points || 0);
+      let activityScore = Math.max(0, Math.min(rubric.activityWeight, rawAct));
+
+      // c. Kiểm tra bản ghi đã lưu trong evaluations (ưu tiên điểm đã được sửa/lưu thủ công)
+      const saved = evalMap.get(m.id);
+      if (saved) {
+        if (saved.attendance_score !== null && saved.attendance_score !== undefined) {
+          attendanceScore = Number(saved.attendance_score);
+        }
+        if (saved.activity_score !== null && saved.activity_score !== undefined) {
+          activityScore = Number(saved.activity_score);
+        }
       }
 
-      // c. Điểm đánh giá định tính & nhận xét từ bảng evaluations
-      const saved = evalMap.get(m.id);
       const qualitativeScore = saved ? Number(saved.qualitative_score || 0) : 0;
       const notes = saved ? saved.notes || '' : '';
       const isLocked = saved ? Boolean(saved.is_locked) : false;
