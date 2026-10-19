@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   Plus,
@@ -608,9 +609,9 @@ export default function TnvMemberList({
       />
 
       {/* Bulk Action Sub-Modals (Gọn gàng không cần cuộn) */}
-      {showBulkModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full overflow-hidden border border-slate-200">
+      {showBulkModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-100 my-auto">
             <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
               <h4 className="text-sm font-bold text-slate-800">
                 {showBulkModal === 'status' && `Đổi trạng thái (${selectedIds.length} TNV)`}
@@ -738,7 +739,8 @@ export default function TnvMemberList({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

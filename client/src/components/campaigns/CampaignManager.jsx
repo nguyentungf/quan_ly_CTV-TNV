@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Calendar,
   Clock,
@@ -49,6 +50,16 @@ export default function CampaignManager() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+
+  useEffect(() => {
+    if (showEditModal) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [showEditModal]);
 
   // Group registration & member selection state
   const [quickGroupType, setQuickGroupType] = useState('ctv');
@@ -1273,9 +1284,9 @@ export default function CampaignManager() {
       </div>
 
       {/* Create / Edit Modal (Ultra-compact) */}
-      {showEditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 max-h-[92vh] flex flex-col">
+      {showEditModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 max-h-[92vh] flex flex-col my-auto">
             <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
               <h3 className="text-sm sm:text-base font-bold text-slate-800">
                 {editingCampaign ? 'Chỉnh Sửa Hoạt Động' : 'Tạo Hoạt Động Mới'}
@@ -1472,7 +1483,8 @@ export default function CampaignManager() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete Campaign Confirm Modal */}

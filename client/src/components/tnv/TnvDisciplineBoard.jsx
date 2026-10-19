@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ShieldAlert, AlertTriangle, AlertOctagon, CheckCircle2, Edit3, X } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
@@ -12,6 +13,16 @@ export default function TnvDisciplineBoard({
   const [newLevel, setNewLevel] = useState('none');
   const [newNote, setNewNote] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedMember) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [selectedMember]);
 
   const { summary = { total: 0, level1: 0, level2: 0 }, data: warnedList = [] } = disciplineData || {};
 
@@ -171,9 +182,9 @@ export default function TnvDisciplineBoard({
       )}
 
       {/* Edit Warning Modal */}
-      {selectedMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4 border border-slate-100">
+      {selectedMember && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4 border border-slate-100 my-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-rose-600" />
@@ -271,7 +282,8 @@ export default function TnvDisciplineBoard({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

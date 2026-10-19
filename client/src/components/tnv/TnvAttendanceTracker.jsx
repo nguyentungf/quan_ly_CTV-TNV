@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar, Plus, Trash2, CheckCircle2, XCircle, Clock, Zap } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
@@ -13,6 +14,16 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
   const [showAddEventModal, setShowAddEventModal] = useState(false);
   const [newEventName, setNewEventName] = useState('');
   const [newEventDate, setNewEventDate] = useState(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    if (showAddEventModal) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [showAddEventModal]);
 
   useEffect(() => {
     loadTracker();
@@ -293,9 +304,9 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
       </div>
 
       {/* Modal Thêm Ca Trực Mới */}
-      {showAddEventModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4 border border-slate-100">
+      {showAddEventModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4 border border-slate-100 my-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-rose-600" />
@@ -354,7 +365,8 @@ export default function TnvAttendanceTracker({ selectedGroup }) {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, GitMerge, ArrowRight, AlertTriangle, ShieldCheck, History, Users } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
@@ -20,6 +21,11 @@ export default function CtvMergeGroupModal({
   useEffect(() => {
     if (isOpen) {
       loadAuditLogs();
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
     }
   }, [isOpen]);
 
@@ -76,9 +82,9 @@ export default function CtvMergeGroupModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-100 flex flex-col max-h-[92vh]">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-100 flex flex-col max-h-[92vh] my-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -255,8 +261,8 @@ export default function CtvMergeGroupModal({
 
       {/* Confirmation Modal */}
       {showConfirm && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-100">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-100 my-auto">
             <div className="flex items-center gap-3 text-amber-600">
               <div className="p-2 rounded-xl bg-amber-50">
                 <AlertTriangle className="w-6 h-6" />
@@ -294,7 +300,8 @@ export default function CtvMergeGroupModal({
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
 

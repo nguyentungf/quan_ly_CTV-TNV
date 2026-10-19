@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api';
 import { X, Key, Shield, Copy, Check, RotateCcw, Save, AlertCircle, Sparkles } from 'lucide-react';
@@ -36,6 +37,11 @@ export default function PasswordManagerModal() {
   useEffect(() => {
     if (isPasswordModalOpen && isAdmin) {
       loadPasswords();
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
     }
   }, [isPasswordModalOpen, isAdmin]);
 
@@ -95,9 +101,9 @@ export default function PasswordManagerModal() {
   const tnvList = passwords.filter((p) => p.target_type === 'tnv');
   const adminItem = passwords.find((p) => p.role === 'admin');
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2.5 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh] my-auto">
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 px-4 sm:px-6 py-3.5 sm:py-4 text-white flex justify-between items-center flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -373,7 +379,8 @@ export default function PasswordManagerModal() {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

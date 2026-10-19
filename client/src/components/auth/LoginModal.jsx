@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { X, Shield, Users, Eye, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
 
@@ -16,6 +17,16 @@ export default function LoginModal() {
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isLoginModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isLoginModalOpen]);
 
   if (!isLoginModalOpen) return null;
 
@@ -79,9 +90,9 @@ export default function LoginModal() {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-md sm:max-w-lg overflow-hidden flex flex-col max-h-[92vh] transition-all transform scale-100">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-md sm:max-w-lg overflow-hidden flex flex-col max-h-[92vh] my-auto transition-all">
         {/* Header Modal */}
         <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-4 sm:px-6 py-3.5 sm:py-4 text-white flex justify-between items-center shrink-0">
           <div className="flex items-center gap-3">
@@ -314,7 +325,8 @@ export default function LoginModal() {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

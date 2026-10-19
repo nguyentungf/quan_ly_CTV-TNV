@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
 
 export default function ConfirmModal({
@@ -11,29 +12,39 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
 }) {
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full overflow-hidden border border-slate-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-100 my-auto">
         {/* Header gọn gàng */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/70">
           <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm sm:text-base">
-            <div className={`p-1.5 rounded-md ${isDanger ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
+            <div className={`p-1.5 rounded-lg ${isDanger ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'}`}>
               <AlertTriangle className="w-4 h-4" />
             </div>
             <span>{title}</span>
           </div>
           <button
             onClick={onCancel}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Nội dung thu gọn, không cần cuộn */}
-        <div className="px-4 py-3 text-slate-600 text-xs sm:text-sm leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto">
+        <div className="px-4 py-3.5 text-slate-600 text-xs sm:text-sm leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto">
           {message}
         </div>
 
@@ -42,14 +53,14 @@ export default function ConfirmModal({
           <button
             type="button"
             onClick={onCancel}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-200 transition-colors"
+            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-200 transition-colors"
           >
             {cancelText}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all ${
+            className={`px-4 py-1.5 rounded-xl text-xs font-bold text-white shadow-sm transition-all ${
               isDanger
                 ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-200'
                 : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
@@ -59,6 +70,7 @@ export default function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

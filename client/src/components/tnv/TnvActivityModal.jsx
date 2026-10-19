@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Award, Sparkles, History, CheckCircle, Plus } from 'lucide-react';
 import { api } from '../../api';
 import { useToast } from '../common/Toast';
@@ -45,6 +46,16 @@ export default function TnvActivityModal({
     }
   };
 
+  useEffect(() => {
+    if (isOpen && member) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen, member]);
+
   if (!isOpen || !member) return null;
 
   const handleSelectPreset = (c) => {
@@ -80,9 +91,9 @@ export default function TnvActivityModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100 flex flex-col max-h-[92vh]">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100 flex flex-col max-h-[92vh] my-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100">
           <div>
@@ -242,7 +253,8 @@ export default function TnvActivityModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
